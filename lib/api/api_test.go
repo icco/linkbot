@@ -168,6 +168,9 @@ func TestIndexSecurityHeaders(t *testing.T) {
 	if !strings.Contains(bodyStr, `<link rel="icon"`) {
 		t.Errorf("favicon link missing from body")
 	}
+	if !strings.Contains(bodyStr, `src="/avatar.png"`) {
+		t.Errorf("brand avatar img missing from body")
+	}
 
 	hc, err := http.Get(srv.URL + "/healthcheck") //nolint:noctx // test
 	if err != nil {
@@ -186,6 +189,43 @@ func TestIndexSecurityHeaders(t *testing.T) {
 	} {
 		if got := hc.Header.Get(header); got != "" {
 			t.Errorf("/healthcheck unexpectedly set %s = %q", header, got)
+		}
+	}
+}
+
+// TestStaticAssets verifies the embedded brand assets are served with the
+// correct content type and aren't empty.
+func TestStaticAssets(t *testing.T) {
+	h := api.Router(api.Options{
+		Sanitizer: stubSanitizer{},
+		Logger:    zap.NewNop().Sugar(),
+	})
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+
+	for path, wantType := range map[string]string{
+		"/favicon.svg": "image/svg+xml",
+		"/avatar.png":  "image/png",
+	} {
+		resp, err := http.Get(srv.URL + path) //nolint:noctx // test
+		if err != nil {
+			t.Fatalf("get %s: %v", path, err)
+		}
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		if err := resp.Body.Close(); err != nil {
+			t.Logf("close %s body: %v", path, err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("%s status = %d, want 200", path, resp.StatusCode)
+		}
+		if got := resp.Header.Get("Content-Type"); got != wantType {
+			t.Errorf("%s Content-Type = %q, want %q", path, got, wantType)
+		}
+		if len(body) == 0 {
+			t.Errorf("%s body is empty", path)
 		}
 	}
 }
