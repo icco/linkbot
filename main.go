@@ -15,11 +15,16 @@ import (
 	"github.com/icco/linkbot/lib/api"
 	"github.com/icco/linkbot/lib/config"
 	"github.com/icco/linkbot/lib/discord"
-	"github.com/icco/linkbot/lib/discordoauth"
 	"github.com/icco/linkbot/lib/logctx"
 	"github.com/icco/linkbot/lib/odesli"
 	"github.com/icco/linkbot/lib/sanitize"
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/clientcredentials"
 )
+
+// discordOAuthEndpoint is the Discord OAuth2 token endpoint used for the
+// client-credentials grant. v10 is the current GA version.
+const discordOAuthEndpoint = "https://discord.com/api/v10/oauth2/token"
 
 // main wires the long-lived dependencies (config, logger, Odesli client,
 // sanitizer, HTTP server, optional Discord bot) and blocks until SIGINT or
@@ -73,8 +78,15 @@ func main() {
 
 		switch {
 		case cfg.DiscordClientID != "" && cfg.DiscordClientSecret != "":
-			oauthClient := discordoauth.New(cfg.DiscordClientID, cfg.DiscordClientSecret, log)
-			if err := bot.RegisterCommands(ctx, oauthClient, cfg.DiscordClientID); err != nil {
+			oauthCfg := &clientcredentials.Config{
+				ClientID:     cfg.DiscordClientID,
+				ClientSecret: cfg.DiscordClientSecret,
+				TokenURL:     discordOAuthEndpoint,
+				Scopes:       []string{"applications.commands.update"},
+				AuthStyle:    oauth2.AuthStyleInHeader,
+			}
+			oauthHTTP := oauthCfg.Client(ctx)
+			if err := bot.RegisterCommands(ctx, oauthHTTP, cfg.DiscordClientID); err != nil {
 				log.Warn("discord slash command registration failed; bot still running", "error", err)
 			}
 		case cfg.DiscordClientID != "" && cfg.DiscordClientSecret == "":

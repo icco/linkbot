@@ -4,7 +4,7 @@
 //   - the original message listener that reads channel messages and replies
 //     with a sanitized URL when one is found;
 //   - a /sanitize global slash command, registered via the OAuth2
-//     client-credentials grant in [github.com/icco/linkbot/lib/discordoauth]
+//     client-credentials grant from [golang.org/x/oauth2/clientcredentials]
 //     and serviced through an InteractionCreate handler.
 //
 // The bot token is still required for the gateway connection — Discord
@@ -27,7 +27,6 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/gorilla/websocket"
-	"github.com/icco/linkbot/lib/discordoauth"
 	"github.com/icco/linkbot/lib/logctx"
 	"github.com/icco/linkbot/lib/sanitize"
 )
@@ -108,7 +107,6 @@ func sanitizeCommand() applicationCommand {
 type Bot struct {
 	session   *discordgo.Session
 	san       *sanitize.Sanitizer
-	http      *http.Client
 	ready     chan struct{}
 	readyOnce sync.Once
 }
@@ -127,7 +125,6 @@ func New(token string, san *sanitize.Sanitizer, base *slog.Logger) (*Bot, error)
 	b := &Bot{
 		session: s,
 		san:     san,
-		http:    &http.Client{Timeout: 15 * time.Second},
 		ready:   make(chan struct{}),
 	}
 	s.AddHandler(b.onReady)
@@ -231,23 +228,20 @@ func intentHint(err error, appID string) string {
 // supplies cfg.DiscordClientID which equals the application ID for bot
 // applications.
 //
-// The bearer token comes from the OAuth2 client-credentials grant via the
-// supplied [discordoauth.Client]. The bot token is intentionally not used
-// here; Discord accepts both for application command endpoints, but using
-// the OAuth flow exercises the documented modern path.
-func (b *Bot) RegisterCommands(ctx context.Context, oauth *discordoauth.Client, applicationID string) error {
+// httpClient is expected to attach an OAuth2 bearer token automatically
+// (e.g. produced by [golang.org/x/oauth2/clientcredentials.Config.Client]),
+// which keeps token caching, refresh, and Basic-auth encoding out of this
+// package. A plain *http.Client also works when the caller has wired auth
+// some other way; in that case Discord will return 401 and the wrapped
+// status code surfaces the misconfiguration.
+func (b *Bot) RegisterCommands(ctx context.Context, httpClient *http.Client, applicationID string) error {
 	if applicationID == "" {
 		return fmt.Errorf("register commands: empty applicationID")
 	}
-	if oauth == nil {
-		return fmt.Errorf("register commands: nil oauth client")
+	if httpClient == nil {
+		return fmt.Errorf("register commands: nil http client")
 	}
 	log := logctx.From(ctx)
-
-	token, err := oauth.Token(ctx)
-	if err != nil {
-		return fmt.Errorf("register commands: oauth token: %w", err)
-	}
 
 	body, err := json.Marshal([]applicationCommand{sanitizeCommand()})
 	if err != nil {
@@ -259,12 +253,11 @@ func (b *Bot) RegisterCommands(ctx context.Context, oauth *discordoauth.Client, 
 	if err != nil {
 		return fmt.Errorf("register commands: build request: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", userAgent)
 
-	resp, err := b.http.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("register commands: request: %w", err)
 	}
