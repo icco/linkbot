@@ -42,6 +42,14 @@ func TestCleanRules(t *testing.T) {
 		{"unknown host strips query+fragment", "https://example.com/some/path?utm_source=foo&utm_medium=bar#frag", "https://example.com/some/path"},
 		{"non-http scheme passes through", "mailto:someone@example.com?subject=hi", "mailto:someone@example.com?subject=hi"},
 		{"uppercase host matches rule", "https://WWW.YOUTUBE.COM/watch?v=abc&utm=x", "https://WWW.YOUTUBE.COM/watch?v=abc"},
+
+		{"paywall apex routes through archive", "https://wsj.com/article?utm_source=foo", archivePrefix + "https://wsj.com/article"},
+		{"paywall subdomain routes through archive", "https://www.bloomberg.com/news/x?utm=y", archivePrefix + "https://www.bloomberg.com/news/x"},
+		{"paywall preserves a kept param", "https://www.washingtonpost.com/article?id=1&utm_source=share", archivePrefix + "https://www.washingtonpost.com/article"},
+		{"nytimes excluded from paywall list", "https://www.nytimes.com/2026/01/01/world/article.html?unlocked_article_code=abcd&smid=share", "https://www.nytimes.com/2026/01/01/world/article.html?unlocked_article_code=abcd"},
+		{"keep_all rule (admin.cloud) skips archive routing", "https://admin.cloud.microsoft/?ref=AdminPortal", "https://admin.cloud.microsoft/?ref=AdminPortal"},
+		{"already at archive.ph passes through", "https://archive.ph/https://wsj.com/article?utm=x", "https://archive.ph/https://wsj.com/article?utm=x"},
+		{"already at archive.today passes through", "https://archive.today/https://wsj.com/article", "https://archive.today/https://wsj.com/article"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
