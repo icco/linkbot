@@ -10,7 +10,7 @@ import (
 // TestNewDefaultsHTTPClient confirms New attaches a 5 s timeout client
 // when WithHTTPClient is omitted.
 func TestNewDefaultsHTTPClient(t *testing.T) {
-	s := New(nil, nil)
+	s := New(nil)
 	if s.hc == nil {
 		t.Fatal("expected default *http.Client, got nil")
 	}
@@ -22,7 +22,7 @@ func TestNewDefaultsHTTPClient(t *testing.T) {
 // TestWithHTTPClient confirms the option overrides the default client.
 func TestWithHTTPClient(t *testing.T) {
 	custom := &http.Client{Timeout: 42 * time.Second}
-	s := New(nil, nil, WithHTTPClient(custom))
+	s := New(nil, WithHTTPClient(custom))
 	if s.hc != custom {
 		t.Errorf("WithHTTPClient did not install custom client")
 	}
@@ -31,7 +31,7 @@ func TestWithHTTPClient(t *testing.T) {
 // TestURLRoutesUnknownHostThroughCareen smoke-tests that Sanitizer.URL
 // hands non-music links to careen.Clean.
 func TestURLRoutesUnknownHostThroughCareen(t *testing.T) {
-	s := New(nil, nil)
+	s := New(nil)
 	got, err := s.URL(context.Background(), "https://example.com/foo?utm_source=bar")
 	if err != nil {
 		t.Fatalf("URL: %v", err)

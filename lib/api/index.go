@@ -7,30 +7,29 @@ import (
 	"net/url"
 	"strconv"
 
-	"github.com/icco/linkbot/lib/logctx"
+	"github.com/icco/gutil/logging"
+	"go.uber.org/zap"
 )
 
-// invitePermissions is the bitmask of Discord permissions requested by the
-// invite link: Send Messages (1<<11) + Read Message History (1<<16).
+// invitePermissions is the Discord permission bitmask the invite asks
+// for: Send Messages (1<<11) + Read Message History (1<<16).
 const invitePermissions = (1 << 11) | (1 << 16)
 
 //go:embed index.html
 var indexHTML string
 
-// indexTemplate is parsed once at init so request handling stays fast and
-// any template syntax error fails loudly at startup rather than on first hit.
+// indexTemplate is parsed once so syntax errors fail at startup, not
+// on first request.
 var indexTemplate = template.Must(template.New("index").Parse(indexHTML))
 
-// indexData is the data model passed to indexTemplate. InviteURL is empty
-// when DISCORD_CLIENT_ID is unset, in which case the template renders
-// generic instructions instead of a clickable button.
+// indexData is the model passed to indexTemplate. An empty InviteURL
+// hides the invite button.
 type indexData struct {
 	InviteURL string
 }
 
-// handleIndex returns the GET / handler. It renders a small static HTML page
-// describing the API and (when discordClientID is non-empty) a clickable
-// invite link for the Discord bot.
+// handleIndex renders the landing page, including a Discord invite
+// button when discordClientID is set.
 func handleIndex(discordClientID string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		data := indexData{}
@@ -39,14 +38,13 @@ func handleIndex(discordClientID string) http.HandlerFunc {
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		if err := indexTemplate.Execute(w, data); err != nil {
-			logctx.From(r.Context()).Error("render index", "error", err)
+			logging.FromContext(r.Context()).Errorw("render index", zap.Error(err))
 		}
 	}
 }
 
-// inviteURL builds the Discord OAuth2 invite URL for the application
-// identified by clientID, requesting the bot scope and the permission set
-// linkbot needs to operate.
+// inviteURL builds the Discord OAuth2 invite URL with the bot scope
+// and invitePermissions.
 func inviteURL(clientID string) string {
 	q := url.Values{}
 	q.Set("client_id", clientID)

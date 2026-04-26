@@ -6,54 +6,75 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	"github.com/icco/linkbot/lib/logctx"
+	"github.com/icco/gutil/logging"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
+	"go.uber.org/zap"
+
 	"github.com/icco/linkbot/lib/sanitize"
 )
 
-// Options configures the HTTP router. Sanitizer and Logger are required;
-// DiscordClientID is optional and, when set, lets the landing page render a
-// clickable Discord invite link.
-type Options struct {
-	Sanitizer       *sanitize.Sanitizer
-	Logger          *slog.Logger
-	DiscordClientID string
+// serverName is the otelhttp span/metric scope.
+const serverName = "linkbot"
+
+// sanitizer is the slice of *sanitize.Sanitizer the handlers need; the
+// interface lets tests inject a fake.
+type sanitizer interface {
+	URL(ctx context.Context, raw string) (string, error)
 }
 
-// Router returns an http.Handler with all routes mounted. The base logger is
-// attached to every request's context via logctx, so handlers retrieve it
-// from ctx instead of carrying it on a server struct.
+// Options configures the HTTP router. MetricsHandler, when set, is
+// mounted at GET /metrics.
+type Options struct {
+	Sanitizer       sanitizer
+	Logger          *zap.SugaredLogger
+	DiscordClientID string
+	MetricsHandler  http.Handler
+}
+
+// Router returns the linkbot HTTP handler. otelhttp wraps the chi
+// router (skipping /metrics so scrapes don't self-instrument); inside,
+// gutil's Middleware injects the per-request logger and routeTag
+// stamps the chi route pattern onto otelhttp's metric labeler.
 func Router(opts Options) http.Handler {
 	r := chi.NewRouter()
-	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
-	r.Use(loggerMiddleware(opts.Logger))
-	r.Use(middleware.Recoverer)
+	r.Use(logging.Middleware(opts.Logger.Desugar()))
+	r.Use(routeTag)
 	r.Use(middleware.Timeout(30 * time.Second))
 
 	r.Get("/", handleIndex(opts.DiscordClientID))
 	r.Get("/healthcheck", handleHealthcheck)
 	r.Post("/sanitize", handleSanitize(opts.Sanitizer))
-	return r
+
+	if opts.MetricsHandler != nil {
+		r.Method(http.MethodGet, "/metrics", opts.MetricsHandler)
+	}
+
+	return otelhttp.NewHandler(r, serverName,
+		otelhttp.WithFilter(func(req *http.Request) bool {
+			return req.URL.Path != "/metrics"
+		}),
+	)
 }
 
-// loggerMiddleware decorates the request context with a slog.Logger that
-// carries the chi request ID, then defers to the next handler.
-func loggerMiddleware(base *slog.Logger) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			log := base
-			if id, ok := r.Context().Value(middleware.RequestIDKey).(string); ok && id != "" {
-				log = log.With("request_id", id)
-			}
-			next.ServeHTTP(w, r.WithContext(logctx.New(r.Context(), log)))
-		})
-	}
+// routeTag tags the otelhttp metric with the chi route pattern so
+// http.server.request.duration buckets by route, not raw URL.
+func routeTag(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(w, r)
+		labeler, ok := otelhttp.LabelerFromContext(r.Context())
+		if !ok {
+			return
+		}
+		if pattern := chi.RouteContext(r.Context()).RoutePattern(); pattern != "" {
+			labeler.Add(semconv.HTTPRoute(pattern))
+		}
+	})
 }
 
 // sanitizeRequest is the JSON body accepted by POST /sanitize.
@@ -61,19 +82,15 @@ type sanitizeRequest struct {
 	URL string `json:"url"`
 }
 
-// sanitizeResponse is the JSON body returned by POST /sanitize. It echoes the
-// input URL alongside the sanitized form and a Changed flag so callers do not
-// have to compare the strings themselves.
+// sanitizeResponse is the JSON body returned by POST /sanitize.
 type sanitizeResponse struct {
 	URL       string `json:"url"`
 	Sanitized string `json:"sanitized"`
 	Changed   bool   `json:"changed"`
 }
 
-// handleSanitize returns an http.HandlerFunc that reads a sanitizeRequest,
-// runs it through san, and writes a sanitizeResponse. Errors are reported
-// through writeError so they are also logged.
-func handleSanitize(san *sanitize.Sanitizer) http.HandlerFunc {
+// handleSanitize handles POST /sanitize.
+func handleSanitize(san sanitizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req sanitizeRequest
 		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<14)).Decode(&req); err != nil {
@@ -99,32 +116,29 @@ func handleSanitize(san *sanitize.Sanitizer) http.HandlerFunc {
 	}
 }
 
-// handleHealthcheck is the liveness/readiness endpoint; it always returns 200
-// with a tiny JSON body so load balancers and orchestrators can probe the
-// service without needing any external dependencies to be reachable.
+// handleHealthcheck is the liveness/readiness probe.
 func handleHealthcheck(w http.ResponseWriter, r *http.Request) {
 	writeJSON(r.Context(), w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// writeJSON marshals body and writes it with the given status. Encode errors
-// are logged through the request-scoped logger.
+// writeJSON writes body as JSON with status; encode errors are logged
+// to the request-scoped logger.
 func writeJSON(ctx context.Context, w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(body); err != nil && !errors.Is(err, http.ErrHandlerTimeout) {
-		logctx.From(ctx).Error("write json", "error", err)
+		logging.FromContext(ctx).Errorw("write json", zap.Error(err))
 	}
 }
 
-// writeError logs err and emits a JSON error body. Taking an error (rather
-// than a bare string) keeps the function type-safe and ensures every client
-// error is also recorded in the server log.
+// writeError logs err and emits a JSON error body. The error type
+// (vs string) preserves wrapped causes.
 func writeError(r *http.Request, w http.ResponseWriter, status int, err error) {
-	logctx.From(r.Context()).Error("http error",
+	logging.FromContext(r.Context()).Errorw("http error",
 		"status", status,
 		"method", r.Method,
 		"path", r.URL.Path,
-		"error", err,
+		zap.Error(err),
 	)
 	writeJSON(r.Context(), w, status, map[string]string{"error": err.Error()})
 }
