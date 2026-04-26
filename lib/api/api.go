@@ -37,7 +37,7 @@ func Router(opts Options) http.Handler {
 	r.Use(middleware.Timeout(30 * time.Second))
 
 	r.Get("/", handleIndex(opts.DiscordClientID))
-	r.Get("/healthz", handleHealthz)
+	r.Get("/healthcheck", handleHealthcheck)
 	r.Post("/sanitize", handleSanitize(opts.Sanitizer))
 	return r
 }
@@ -99,9 +99,10 @@ func handleSanitize(san *sanitize.Sanitizer) http.HandlerFunc {
 	}
 }
 
-// handleHealthz is the liveness endpoint; it always returns 200 with a tiny
-// JSON body so load balancers and orchestrators can probe the service.
-func handleHealthz(w http.ResponseWriter, r *http.Request) {
+// handleHealthcheck is the liveness/readiness endpoint; it always returns 200
+// with a tiny JSON body so load balancers and orchestrators can probe the
+// service without needing any external dependencies to be reachable.
+func handleHealthcheck(w http.ResponseWriter, r *http.Request) {
 	writeJSON(r.Context(), w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
