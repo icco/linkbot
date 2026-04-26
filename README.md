@@ -67,7 +67,9 @@ curl -sS -X POST http://localhost:8080/sanitize \
 | `DISCORD_TOKEN` | no | _(empty)_ | Discord bot token. If unset, only the HTTP API runs. |
 | `PORT` | no | `8080` | HTTP listen port. |
 | `ODESLI_API_KEY` | no | _(empty)_ | Odesli API key. The public endpoint works without one but is rate limited. |
-| `ODESLI_USER_COUNTRY` | no | _(empty)_ | ISO 3166-1 alpha-2 country code passed to Odesli (e.g. `US`). |
+
+The Odesli `userCountry` is currently hardcoded to `US`; this will move
+to a config field (or per-guild setting) in a future PR.
 
 ## Repository layout
 

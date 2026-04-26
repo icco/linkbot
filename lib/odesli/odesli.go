@@ -30,16 +30,32 @@ type Client struct {
 type Option func(*Client)
 
 // WithAPIKey sets an Odesli API key (optional; raises rate limits).
-func WithAPIKey(k string) Option { return func(c *Client) { c.apiKey = k } }
+func WithAPIKey(k string) Option {
+	return func(c *Client) {
+		c.apiKey = k
+	}
+}
 
 // WithUserCountry sets the ISO 3166-1 alpha-2 country code sent to Odesli.
-func WithUserCountry(cc string) Option { return func(c *Client) { c.country = cc } }
+func WithUserCountry(cc string) Option {
+	return func(c *Client) {
+		c.country = cc
+	}
+}
 
 // WithBaseURL overrides the API base URL (mostly for tests).
-func WithBaseURL(u string) Option { return func(c *Client) { c.baseURL = u } }
+func WithBaseURL(u string) Option {
+	return func(c *Client) {
+		c.baseURL = u
+	}
+}
 
 // WithHTTPClient overrides the HTTP client.
-func WithHTTPClient(h *http.Client) Option { return func(c *Client) { c.http = h } }
+func WithHTTPClient(h *http.Client) Option {
+	return func(c *Client) {
+		c.http = h
+	}
+}
 
 // New returns a Client with sensible defaults.
 func New(log *slog.Logger, opts ...Option) *Client {

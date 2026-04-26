@@ -8,6 +8,11 @@ import (
 	"strconv"
 )
 
+// UserCountry is the ISO 3166-1 alpha-2 country code sent to Odesli when
+// resolving links. Hardcoded to US for now; revisit when we need
+// per-deployment configuration.
+const UserCountry = "US"
+
 // Config holds the runtime configuration.
 type Config struct {
 	// DiscordToken is the bot token. When empty, the Discord bot does not start.
@@ -18,9 +23,6 @@ type Config struct {
 
 	// OdesliAPIKey is optional. The public Odesli API works without one but is rate limited.
 	OdesliAPIKey string
-
-	// UserCountry is an optional ISO 3166-1 alpha-2 country code passed to Odesli.
-	UserCountry string
 }
 
 // Load reads configuration from environment variables.
@@ -28,7 +30,6 @@ func Load() (*Config, error) {
 	c := &Config{
 		DiscordToken: os.Getenv("DISCORD_TOKEN"),
 		OdesliAPIKey: os.Getenv("ODESLI_API_KEY"),
-		UserCountry:  os.Getenv("ODESLI_USER_COUNTRY"),
 	}
 
 	port := os.Getenv("PORT")

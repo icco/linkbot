@@ -15,6 +15,7 @@ import (
 	"github.com/icco/linkbot/lib/api"
 	"github.com/icco/linkbot/lib/config"
 	"github.com/icco/linkbot/lib/discord"
+	"github.com/icco/linkbot/lib/logctx"
 	"github.com/icco/linkbot/lib/odesli"
 	"github.com/icco/linkbot/lib/sanitize"
 )
@@ -31,13 +32,13 @@ func main() {
 
 	odesliClient := odesli.New(log,
 		odesli.WithAPIKey(cfg.OdesliAPIKey),
-		odesli.WithUserCountry(cfg.UserCountry),
+		odesli.WithUserCountry(config.UserCountry),
 	)
 	san := sanitize.New(odesliClient, log)
 
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.Port),
-		Handler:           api.New(san, log).Router(),
+		Handler:           api.Router(san, log),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -46,6 +47,7 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	ctx = logctx.New(ctx, log)
 
 	var bot *discord.Bot
 	if cfg.DiscordToken != "" {
@@ -54,7 +56,7 @@ func main() {
 			log.Error("discord init", "error", err)
 			os.Exit(1)
 		}
-		if err := b.Start(); err != nil {
+		if err := b.Start(ctx); err != nil {
 			log.Error("discord start", "error", err)
 			os.Exit(1)
 		}

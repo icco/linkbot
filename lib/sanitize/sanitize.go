@@ -88,7 +88,9 @@ func (s *Sanitizer) URL(ctx context.Context, raw string) (string, error) {
 }
 
 // Changed reports whether sanitization produced a different URL.
-func Changed(before, after string) bool { return before != after && after != "" }
+func Changed(before, after string) bool {
+	return before != after && after != ""
+}
 
 func isMusicHost(host string) bool {
 	host = strings.ToLower(host)
