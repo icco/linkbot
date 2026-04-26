@@ -35,15 +35,16 @@
       font: 1.05rem/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
       color: var(--fg);
     }
-    .brand { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.25rem; }
-    .brand .logo { width: 48px; height: 48px; flex: none; }
-    h1 { font-size: 2.4rem; margin: 0; letter-spacing: -0.02em; }
+    .brand { display: flex; align-items: center; gap: 1rem; margin-bottom: 0.5rem; }
+    .brand .logo { width: 80px; height: 80px; flex: none; }
+    .brand-text { display: flex; flex-direction: column; }
+    h1 { font-size: 2.4rem; margin: 0; letter-spacing: -0.02em; line-height: 1.05; }
     h2 { font-size: 1.2rem; margin: 2.25rem 0 0.5rem; }
     p { margin: 0.6rem 0; }
     ul { padding-left: 1.25rem; }
     li { margin-bottom: 0.55rem; }
     a { color: var(--accent); }
-    .tagline { font-size: 1.15rem; color: var(--muted); margin-top: 0; }
+    .tagline { font-size: 1.15rem; color: var(--muted); margin: 0.35rem 0 0; }
     .muted { color: var(--muted); }
     code {
       font: 0.95em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -73,10 +74,12 @@
 </head>
 <body>
   <header class="brand">
-    <img class="logo" src="/avatar.png" alt="" width="48" height="48">
-    <h1>linkbot</h1>
+    <img class="logo" src="/avatar.png" alt="" width="80" height="80">
+    <div class="brand-text">
+      <h1>linkbot</h1>
+      <p class="tagline">A Discord bot that quietly cleans up the links your friends share.</p>
+    </div>
   </header>
-  <p class="tagline">A Discord bot that quietly cleans up the links your friends share.</p>
 
   {{if .InviteURL}}
   <a class="invite" href="{{.InviteURL}}">Add to Discord</a>
