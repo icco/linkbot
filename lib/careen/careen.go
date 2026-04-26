@@ -51,9 +51,10 @@ var archiveMirrorSet = func() map[string]struct{} {
 }()
 
 // pickArchiveMirror returns a mirror host from archiveMirrors. It is a
-// var so tests can pin a deterministic mirror.
+// var so tests can pin a deterministic mirror. Load-spreading only —
+// not security-sensitive, so math/rand/v2 is correct here.
 var pickArchiveMirror = func() string {
-	return archiveMirrors[rand.IntN(len(archiveMirrors))]
+	return archiveMirrors[rand.IntN(len(archiveMirrors))] //nolint:gosec // G404: load-spreading, not security-sensitive
 }
 
 // paywallHosts triggers archive routing in clean. NYT is intentionally
