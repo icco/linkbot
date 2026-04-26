@@ -8,6 +8,13 @@ import (
 //go:embed favicon.svg
 var faviconSVG []byte
 
+// avatarPNG is favicon.svg rasterized to 1024x1024 for the Discord
+// avatar and the landing-page brand mark. Regenerate with:
+//
+//	qlmanage -t -s 1024 -o /tmp lib/api/favicon.svg && \
+//	  cp /tmp/favicon.svg.png lib/api/avatar.png && \
+//	  cp /tmp/favicon.svg.png assets/avatar.png
+//
 //go:embed avatar.png
 var avatarPNG []byte
 
