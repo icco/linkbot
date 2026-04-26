@@ -20,24 +20,15 @@ import (
 // sanitized URL has already been posted in the channel.
 const recentLookback = 20
 
-// closeDisallowedIntents is the gateway close code returned when the bot
-// identifies with a privileged intent that has not been enabled in the
-// Developer Portal. See
-// https://discord.com/developers/docs/topics/opcodes-and-status-codes#gateway-gateway-close-event-codes.
+// closeDisallowedIntents is the gateway close code for "Disallowed
+// intent(s)" — a privileged intent not enabled in the Developer Portal.
 const closeDisallowedIntents = 4014
 
-// readyTimeout bounds how long Start waits for the gateway READY event after
-// Open() returns. discordgo's Open() has been observed to return nil before
-// READY fully populates session state, so we wait briefly so the success log
-// line carries a real username. If READY never arrives we log a warning and
-// return nil instead of crashing: the bot may still recover via discordgo's
-// reconnect logic, and failing here would only put us in a docker
-// `restart: always` hot-loop.
+// readyTimeout bounds how long Start waits for READY before continuing
+// without a populated session state.
 const readyTimeout = 10 * time.Second
 
-// errReadyTimeout signals that the gateway READY event did not arrive within
-// readyTimeout. It is unexported because callers should react to it with a
-// warning log, not by failing Start.
+// errReadyTimeout signals that READY did not arrive within readyTimeout.
 var errReadyTimeout = errors.New("discord ready event not received before timeout")
 
 // Bot listens for messages on Discord and replies with sanitized URLs.
@@ -69,22 +60,16 @@ func New(token string, san *sanitize.Sanitizer, base *slog.Logger) (*Bot, error)
 	return b, nil
 }
 
-// onReady fires when discordgo dispatches a READY (or RESUMED-then-READY)
-// event. It signals Start that session state has been populated. We guard the
-// channel close with sync.Once because reconnects can deliver multiple READY
-// events and closing an already-closed channel panics.
+// onReady signals Start that the gateway READY event arrived. sync.Once
+// guards against double-close on reconnect-driven re-fires.
 func (b *Bot) onReady(_ *discordgo.Session, _ *discordgo.Ready) {
 	b.readyOnce.Do(func() {
 		close(b.ready)
 	})
 }
 
-// Start opens the gateway connection. It then waits up to readyTimeout for
-// the READY handshake so the success-path log carries a populated user. On
-// timeout it logs a warning and returns nil rather than crashing the
-// process; on a 4014 ("Disallowed intent(s)") close from Open() it wraps the
-// error with a hint pointing the operator at the privileged-intent toggle in
-// the Discord Developer Portal.
+// Start opens the gateway, waits up to readyTimeout for READY, and on a
+// close-4014 from Open() wraps the error with a Developer Portal hint.
 func (b *Bot) Start(ctx context.Context) error {
 	if err := b.session.Open(); err != nil {
 		if hint := intentHint(err, b.applicationID()); hint != "" {
@@ -115,10 +100,8 @@ func (b *Bot) Close() error {
 	return b.session.Close()
 }
 
-// applicationID returns the bot's Discord application ID from session state,
-// or an empty string when the gateway never populated it (e.g. Open() failed
-// before READY). It is defensive about nil pointers because the whole point
-// of this helper is to be called on the unhappy path.
+// applicationID returns the bot's application ID from session state, or "".
+// Defensive about nil pointers since callers run on the unhappy path.
 func (b *Bot) applicationID() string {
 	if b == nil || b.session == nil || b.session.State == nil {
 		return ""
@@ -129,10 +112,8 @@ func (b *Bot) applicationID() string {
 	return ""
 }
 
-// waitForReady blocks until ready is closed, ctx is canceled, or timeout
-// elapses. The timeout path returns errReadyTimeout so callers can react via
-// errors.Is; the ctx path wraps ctx.Err() so callers can inspect cancellation
-// vs. deadline.
+// waitForReady blocks until ready closes, ctx is done, or timeout elapses.
+// Returns errReadyTimeout on timeout and a wrapped ctx.Err() on cancel.
 func waitForReady(ctx context.Context, ready <-chan struct{}, timeout time.Duration) error {
 	select {
 	case <-ready:
@@ -144,13 +125,9 @@ func waitForReady(ctx context.Context, ready <-chan struct{}, timeout time.Durat
 	}
 }
 
-// intentHint inspects err for a gorilla/websocket close 4014 ("Disallowed
-// intent(s)") anywhere in its chain and returns a human-readable hint
-// pointing the operator at the privileged-intent toggle in the Discord
-// Developer Portal. It returns the empty string for any other error so
-// callers can branch on a simple non-empty check. appID is best-effort: when
-// non-empty we deep-link to that application's bot page; otherwise we link
-// to the portal root rather than inventing an ID.
+// intentHint returns a Developer Portal hint when err's chain contains a
+// websocket close 4014, or "" otherwise. With a non-empty appID it
+// deep-links to that bot's page; otherwise it links to the portal root.
 func intentHint(err error, appID string) string {
 	if err == nil {
 		return ""

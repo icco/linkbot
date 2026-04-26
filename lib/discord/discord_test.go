@@ -1,8 +1,3 @@
-// Package discord tests cover the gateway-handshake helpers extracted from
-// (*Bot).Start: waitForReady (ready/timeout/ctx) and intentHint (close-4014
-// detection on the error chain). These helpers exist precisely so we can
-// exercise the racy/edge behavior without spinning up a real discordgo
-// session.
 package discord
 
 import (
@@ -16,8 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// TestWaitForReady_Fires checks that a closed ready channel returns nil
-// immediately (the happy path that follows a real gateway READY event).
+// TestWaitForReady_Fires checks that an already-closed ready returns nil.
 func TestWaitForReady_Fires(t *testing.T) {
 	t.Parallel()
 
@@ -29,8 +23,7 @@ func TestWaitForReady_Fires(t *testing.T) {
 	}
 }
 
-// TestWaitForReady_FiresAfterDelay ensures waitForReady wakes up on the
-// channel close even when ready is signaled after the call begins blocking.
+// TestWaitForReady_FiresAfterDelay checks that ready closing mid-call wins.
 func TestWaitForReady_FiresAfterDelay(t *testing.T) {
 	t.Parallel()
 
@@ -45,8 +38,7 @@ func TestWaitForReady_FiresAfterDelay(t *testing.T) {
 	}
 }
 
-// TestWaitForReady_Timeout asserts that a ready channel that never closes
-// causes waitForReady to return errReadyTimeout, identifiable via errors.Is.
+// TestWaitForReady_Timeout checks that timeout returns errReadyTimeout.
 func TestWaitForReady_Timeout(t *testing.T) {
 	t.Parallel()
 
@@ -57,9 +49,7 @@ func TestWaitForReady_Timeout(t *testing.T) {
 	}
 }
 
-// TestWaitForReady_CtxCanceled asserts that ctx cancellation wins over a
-// pending ready/timeout and that ctx.Err() is preserved in the wrapped
-// error chain so callers can inspect cancellation vs. deadline.
+// TestWaitForReady_CtxCanceled checks that ctx cancellation wraps ctx.Err.
 func TestWaitForReady_CtxCanceled(t *testing.T) {
 	t.Parallel()
 
@@ -76,9 +66,7 @@ func TestWaitForReady_CtxCanceled(t *testing.T) {
 	}
 }
 
-// TestWaitForReady_CtxDeadline checks the deadline-exceeded branch of the
-// ctx case: the wrapped error must report context.DeadlineExceeded so
-// callers can distinguish it from a manual cancel.
+// TestWaitForReady_CtxDeadline checks that deadline wraps DeadlineExceeded.
 func TestWaitForReady_CtxDeadline(t *testing.T) {
 	t.Parallel()
 
@@ -92,11 +80,8 @@ func TestWaitForReady_CtxDeadline(t *testing.T) {
 	}
 }
 
-// TestIntentHint covers the close-4014 detection helper. The hint must fire
-// for direct and wrapped *websocket.CloseError values with code 4014, fall
-// back to a portal-root URL when no app ID is known (rather than splicing a
-// human-readable placeholder into the path), and return the empty string
-// for nil / non-close / wrong-code inputs.
+// TestIntentHint covers the close-4014 detection helper across nil,
+// non-close, wrong-code, direct, wrapped, and missing-app-ID inputs.
 func TestIntentHint(t *testing.T) {
 	t.Parallel()
 
@@ -107,30 +92,12 @@ func TestIntentHint(t *testing.T) {
 		name    string
 		err     error
 		appID   string
-		want    string // substring assertion; empty string means "must be empty"
+		want    string
 		wantURL string
 	}{
-		{
-			name:    "nil error",
-			err:     nil,
-			appID:   "123",
-			want:    "",
-			wantURL: "",
-		},
-		{
-			name:    "non-close error",
-			err:     errors.New("dial tcp: connection refused"),
-			appID:   "123",
-			want:    "",
-			wantURL: "",
-		},
-		{
-			name:    "close 4001",
-			err:     close4001,
-			appID:   "123",
-			want:    "",
-			wantURL: "",
-		},
+		{name: "nil error", err: nil, appID: "123"},
+		{name: "non-close error", err: errors.New("dial tcp: connection refused"), appID: "123"},
+		{name: "close 4001", err: close4001, appID: "123"},
 		{
 			name:    "close 4014 direct with app id",
 			err:     close4014,
@@ -178,10 +145,7 @@ func TestIntentHint(t *testing.T) {
 	}
 }
 
-// TestOnReady_Idempotent verifies that the READY handler closes b.ready
-// exactly once even when discordgo re-fires READY after a reconnect.
-// Without the sync.Once guard the second invocation would panic on a closed
-// channel and crash the gateway listener goroutine.
+// TestOnReady_Idempotent checks that repeat READY events don't re-close ready.
 func TestOnReady_Idempotent(t *testing.T) {
 	t.Parallel()
 
