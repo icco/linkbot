@@ -10,6 +10,19 @@ import (
 	"testing"
 )
 
+// pinMirror forces pickArchiveMirror to return mirror until t finishes,
+// so paywall-routing assertions stay deterministic across packages.
+func pinMirror(t *testing.T, mirror string) {
+	t.Helper()
+	orig := pickArchiveMirror
+	pickArchiveMirror = func() string {
+		return mirror
+	}
+	t.Cleanup(func() {
+		pickArchiveMirror = orig
+	})
+}
+
 func mustParse(t *testing.T, raw string) *url.URL {
 	t.Helper()
 	u, err := url.Parse(raw)
@@ -22,6 +35,8 @@ func mustParse(t *testing.T, raw string) *url.URL {
 // TestCleanRules walks one URL per non-HTTP-following rule plus a few
 // default-strip cases.
 func TestCleanRules(t *testing.T) {
+	pinMirror(t, "archive.ph")
+
 	cases := []struct {
 		name string
 		in   string
@@ -42,6 +57,14 @@ func TestCleanRules(t *testing.T) {
 		{"unknown host strips query+fragment", "https://example.com/some/path?utm_source=foo&utm_medium=bar#frag", "https://example.com/some/path"},
 		{"non-http scheme passes through", "mailto:someone@example.com?subject=hi", "mailto:someone@example.com?subject=hi"},
 		{"uppercase host matches rule", "https://WWW.YOUTUBE.COM/watch?v=abc&utm=x", "https://WWW.YOUTUBE.COM/watch?v=abc"},
+
+		{"paywall apex routes through archive", "https://wsj.com/article?utm_source=foo", "https://archive.ph/https://wsj.com/article"},
+		{"paywall subdomain routes through archive", "https://www.bloomberg.com/news/x?utm=y", "https://archive.ph/https://www.bloomberg.com/news/x"},
+		{"paywall preserves a kept param", "https://www.washingtonpost.com/article?id=1&utm_source=share", "https://archive.ph/https://www.washingtonpost.com/article"},
+		{"nytimes excluded from paywall list", "https://www.nytimes.com/2026/01/01/world/article.html?unlocked_article_code=abcd&smid=share", "https://www.nytimes.com/2026/01/01/world/article.html?unlocked_article_code=abcd"},
+		{"keep_all rule (admin.cloud) skips archive routing", "https://admin.cloud.microsoft/?ref=AdminPortal", "https://admin.cloud.microsoft/?ref=AdminPortal"},
+		{"already at archive.ph passes through", "https://archive.ph/https://wsj.com/article?utm=x", "https://archive.ph/https://wsj.com/article?utm=x"},
+		{"already at archive.today passes through", "https://archive.today/https://wsj.com/article", "https://archive.today/https://wsj.com/article"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -195,5 +218,29 @@ func TestRecursionCapViaRedirectChain(t *testing.T) {
 	}
 	if !strings.HasPrefix(got, srv.URL) {
 		t.Errorf("expected URL on the test server after cap, got %q", got)
+	}
+}
+
+// TestPickArchiveMirrorRotates exercises the default (random) picker:
+// every returned mirror must be in archiveMirrors and, over enough
+// trials, more than one mirror must show up so we know we are not
+// pinned to a single domain.
+func TestPickArchiveMirrorRotates(t *testing.T) {
+	valid := make(map[string]struct{}, len(archiveMirrors))
+	for _, m := range archiveMirrors {
+		valid[m] = struct{}{}
+	}
+
+	seen := make(map[string]struct{})
+	const trials = 200
+	for range trials {
+		m := pickArchiveMirror()
+		if _, ok := valid[m]; !ok {
+			t.Fatalf("pickArchiveMirror returned %q, not in archiveMirrors", m)
+		}
+		seen[m] = struct{}{}
+	}
+	if len(seen) < 2 {
+		t.Errorf("pickArchiveMirror only returned %d distinct mirrors over %d trials: %v", len(seen), trials, seen)
 	}
 }

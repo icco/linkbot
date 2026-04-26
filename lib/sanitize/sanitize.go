@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -112,10 +113,7 @@ func Changed(before, after string) bool {
 // isMusicHost reports whether host (or a subdomain) is in musicHosts.
 func isMusicHost(host string) bool {
 	host = strings.ToLower(host)
-	for _, suffix := range musicHosts {
-		if host == suffix || strings.HasSuffix(host, "."+suffix) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(musicHosts, func(suffix string) bool {
+		return host == suffix || strings.HasSuffix(host, "."+suffix)
+	})
 }

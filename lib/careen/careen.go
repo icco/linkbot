@@ -1,17 +1,21 @@
-// Package careen drops URL tracking params and unwraps redirect hosts.
+// Package careen drops URL tracking params, unwraps redirect hosts, and
+// routes known paywalled sites through an archive-mirror prefix.
 //
 // Host rules and strategies are a Go port of github.com/timball/Careen
-// (©Tim Ball). Paywall-bypass and archive-mirror logic is not ported.
+// (©Tim Ball).
 package careen
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/icco/gutil/logging"
@@ -24,24 +28,68 @@ const (
 	bodyReadLimit  = 1 << 20
 )
 
+// archiveMirrors are interchangeable archive.today aliases used for
+// paywall routing and already-archived loop prevention.
+var archiveMirrors = []string{
+	"archive.fo",
+	"archive.is",
+	"archive.li",
+	"archive.md",
+	"archive.ph",
+	"archive.today",
+}
+
+// pickArchiveMirror returns a mirror host from archiveMirrors. It is a
+// var so tests can pin a deterministic mirror via pinMirror.
+var pickArchiveMirror = func() string {
+	n, err := rand.Int(rand.Reader, big.NewInt(int64(len(archiveMirrors))))
+	if err != nil {
+		return archiveMirrors[0]
+	}
+	return archiveMirrors[n.Int64()]
+}
+
+// paywallHosts triggers archive routing in clean. NYT is intentionally
+// excluded: its rule preserves the official unlocked_article_code
+// gift-link param, so archiving on top would be redundant.
+var paywallHosts = []*regexp.Regexp{
+	regexp.MustCompile(`(^|\.)bloomberg\.com$`),
+	regexp.MustCompile(`(^|\.)bostonglobe\.com$`),
+	regexp.MustCompile(`(^|\.)businessinsider\.com$`),
+	regexp.MustCompile(`(^|\.)economist\.com$`),
+	regexp.MustCompile(`(^|\.)ft\.com$`),
+	regexp.MustCompile(`(^|\.)latimes\.com$`),
+	regexp.MustCompile(`(^|\.)medium\.com$`),
+	regexp.MustCompile(`(^|\.)newyorker\.com$`),
+	regexp.MustCompile(`(^|\.)nymag\.com$`),
+	regexp.MustCompile(`(^|\.)telegraph\.co\.uk$`),
+	regexp.MustCompile(`(^|\.)theatlantic\.com$`),
+	regexp.MustCompile(`(^|\.)thetimes\.co\.uk$`),
+	regexp.MustCompile(`(^|\.)washingtonpost\.com$`),
+	regexp.MustCompile(`(^|\.)wired\.com$`),
+	regexp.MustCompile(`(^|\.)wsj\.com$`),
+}
+
 // strategy produces a cleaned URL for u.
 type strategy func(context.Context, *url.URL) (string, error)
 
-// rule pairs a host regexp with a strategy factory; the factory receives
-// the active *cleaner so HTTP-using strategies can recurse.
+// rule pairs a host regexp with a strategy factory; noArchive=true
+// suppresses paywall-archive routing for trusted workspace hosts.
 type rule struct {
-	pattern *regexp.Regexp
-	make    func(*cleaner) strategy
+	pattern   *regexp.Regexp
+	make      func(*cleaner) strategy
+	noArchive bool
 }
 
-// static wraps a stateless strategy as a factory.
+// static wraps a stateless strategy as a rule factory.
 func static(s strategy) func(*cleaner) strategy {
 	return func(_ *cleaner) strategy {
 		return s
 	}
 }
 
-// rules is populated in init to break the var-init cycle.
+// rules dispatch host → strategy. First match wins; default is stripAll.
+// Populated in init to break the var-init cycle through appleNews.
 var rules []rule
 
 func init() {
@@ -64,7 +112,7 @@ func init() {
 		{pattern: regexp.MustCompile(`(^|\.)twitch\.tv$`), make: static(keepSpecificParams([]string{"t"}, nil))},
 		{pattern: regexp.MustCompile(`^apple\.news$`), make: func(c *cleaner) strategy { return c.appleNews() }},
 		{pattern: regexp.MustCompile(`(^|\.)nytimes\.com$`), make: static(keepSpecificParams([]string{"unlocked_article_code"}, nil))},
-		{pattern: regexp.MustCompile(`^admin\.cloud\.microsoft$`), make: static(keepAll)},
+		{pattern: regexp.MustCompile(`^admin\.cloud\.microsoft$`), make: static(keepAll), noArchive: true},
 		{pattern: regexp.MustCompile(`search\.app$`), make: func(c *cleaner) strategy { return c.followRedirect() }},
 	}
 }
@@ -89,9 +137,14 @@ func Clean(ctx context.Context, raw string, hc *http.Client) (string, error) {
 	return c.clean(ctx, u)
 }
 
-// clean dispatches u to the matching strategy under the hop cap.
+// clean dispatches u to the matching strategy and applies paywall
+// routing to the result. The hop cap bounds redirect/recursion chains.
 func (c *cleaner) clean(ctx context.Context, u *url.URL) (string, error) {
 	if u.Scheme != "http" && u.Scheme != "https" {
+		return u.String(), nil
+	}
+	host := strings.ToLower(u.Host)
+	if slices.Contains(archiveMirrors, host) {
 		return u.String(), nil
 	}
 	if c.hop >= c.maxHops {
@@ -103,13 +156,33 @@ func (c *cleaner) clean(ctx context.Context, u *url.URL) (string, error) {
 		c.hop--
 	}()
 
-	host := strings.ToLower(u.Host)
+	s, noArchive := dispatch(c, host)
+	cleaned, err := s(ctx, u)
+	if err != nil {
+		return cleaned, err
+	}
+	if noArchive || !isPaywalled(host) {
+		return cleaned, nil
+	}
+	return "https://" + pickArchiveMirror() + "/" + cleaned, nil
+}
+
+// dispatch returns the strategy and noArchive flag for host. Default
+// is stripAll with archive routing enabled.
+func dispatch(c *cleaner, host string) (strategy, bool) {
 	for _, r := range rules {
 		if r.pattern.MatchString(host) {
-			return r.make(c)(ctx, u)
+			return r.make(c), r.noArchive
 		}
 	}
-	return stripAll(ctx, u)
+	return stripAll, false
+}
+
+// isPaywalled reports whether host matches any paywallHosts pattern.
+func isPaywalled(host string) bool {
+	return slices.ContainsFunc(paywallHosts, func(re *regexp.Regexp) bool {
+		return re.MatchString(host)
+	})
 }
 
 // stripAll drops the query and fragment.
@@ -127,15 +200,10 @@ func keepAll(_ context.Context, u *url.URL) (string, error) {
 
 // keepSpecificParams keeps only named query params, merges extra, drops fragment.
 func keepSpecificParams(keep []string, extra map[string]string) strategy {
-	set := make(map[string]struct{}, len(keep))
-	for _, k := range keep {
-		set[k] = struct{}{}
-	}
 	return func(_ context.Context, u *url.URL) (string, error) {
-		q := u.Query()
 		out := url.Values{}
-		for k, vs := range q {
-			if _, ok := set[k]; !ok {
+		for k, vs := range u.Query() {
+			if !slices.Contains(keep, k) {
 				continue
 			}
 			for _, v := range vs {
@@ -166,8 +234,8 @@ func amazonStrategy(_ context.Context, u *url.URL) (string, error) {
 // appleNewsRE captures the embedded redirect target in apple.news wrappers.
 var appleNewsRE = regexp.MustCompile(`redirectToUrlAfterTimeout\("([^"]+)"`)
 
-// appleNews scrapes the wrapper for its redirect URL and recurses; on
-// any failure it returns u untouched.
+// appleNews scrapes the wrapper for its redirect URL and recurses;
+// any failure returns u untouched.
 func (c *cleaner) appleNews() strategy {
 	return func(ctx context.Context, u *url.URL) (string, error) {
 		log := logging.FromContext(ctx)

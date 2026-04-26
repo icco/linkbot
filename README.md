@@ -2,9 +2,18 @@
 
 A Discord bot and HTTP API that **sanitizes URLs**.
 
-Today that means resolving music streaming links (Spotify, Apple Music, YouTube Music, Tidal,
-Deezer, etc.) through [Odesli / song.link](https://odesli.co/) so they open on whatever service
-the reader uses.
+What "sanitize" means today:
+
+- **Music links** (Spotify, Apple Music, YouTube Music, Tidal, Deezer, …) are resolved through
+  [Odesli / song.link](https://odesli.co/) so they open on whatever service the reader uses.
+- **Tracking params** (`utm_*`, `fbclid`, `gclid`, …) are stripped via host-aware rules ported
+  from [timball/Careen](https://github.com/timball/Careen).
+- **Paywalled hosts** (WSJ, FT, Bloomberg, Washington Post, The Atlantic, The New Yorker, …)
+  are rewritten through a randomly chosen [archive.today](https://archive.today/) mirror
+  (`archive.fo`, `archive.is`, `archive.li`, `archive.md`, `archive.ph`, `archive.today`)
+  so readers without a subscription can still open the link, and so we don't pile load
+  onto a single mirror. Already-archived URLs and trusted workspace hosts
+  (`admin.cloud.microsoft`) pass through untouched.
 
 Stack: Go, [chi](https://github.com/go-chi/chi), [discordgo](https://github.com/bwmarrin/discordgo),
 [icco/gutil](https://github.com/icco/gutil) (zap-based JSON logs),
