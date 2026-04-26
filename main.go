@@ -20,6 +20,10 @@ import (
 	"github.com/icco/linkbot/lib/sanitize"
 )
 
+// main wires the long-lived dependencies (config, logger, Odesli client,
+// sanitizer, HTTP server, optional Discord bot) and blocks until SIGINT or
+// SIGTERM, after which it shuts both the HTTP server and the Discord
+// gateway down with a 10 s grace window.
 func main() {
 	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	slog.SetDefault(log)

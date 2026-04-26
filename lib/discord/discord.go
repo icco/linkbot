@@ -53,9 +53,10 @@ func (b *Bot) Close() error {
 	return b.session.Close()
 }
 
-// handleMessage returns the discordgo handler. We close over the base logger
-// here so each event can derive a per-message child logger and stash it on
-// the request context.
+// handleMessage returns the discordgo MessageCreate handler. It closes over
+// the base logger so each event can derive a per-message child logger
+// (channel/message/author IDs) and stash it on a fresh, time-bounded context.
+// Bot/own messages are ignored to avoid feedback loops.
 func (b *Bot) handleMessage(base *slog.Logger) func(*discordgo.Session, *discordgo.MessageCreate) {
 	return func(s *discordgo.Session, m *discordgo.MessageCreate) {
 		if m.Author == nil || m.Author.Bot {

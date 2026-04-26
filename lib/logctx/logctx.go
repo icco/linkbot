@@ -9,6 +9,9 @@ import (
 	"log/slog"
 )
 
+// ctxKey is the unexported context.Context key under which the logger is
+// stored. Using an empty struct type prevents collisions with keys from other
+// packages, per the context package guidelines.
 type ctxKey struct{}
 
 // New returns a copy of ctx that carries log.

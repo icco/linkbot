@@ -46,16 +46,23 @@ func loggerMiddleware(base *slog.Logger) func(http.Handler) http.Handler {
 	}
 }
 
+// sanitizeRequest is the JSON body accepted by POST /sanitize.
 type sanitizeRequest struct {
 	URL string `json:"url"`
 }
 
+// sanitizeResponse is the JSON body returned by POST /sanitize. It echoes the
+// input URL alongside the sanitized form and a Changed flag so callers do not
+// have to compare the strings themselves.
 type sanitizeResponse struct {
 	URL       string `json:"url"`
 	Sanitized string `json:"sanitized"`
 	Changed   bool   `json:"changed"`
 }
 
+// handleSanitize returns an http.HandlerFunc that reads a sanitizeRequest,
+// runs it through san, and writes a sanitizeResponse. Errors are reported
+// through writeError so they are also logged.
 func handleSanitize(san *sanitize.Sanitizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req sanitizeRequest
@@ -82,6 +89,8 @@ func handleSanitize(san *sanitize.Sanitizer) http.HandlerFunc {
 	}
 }
 
+// handleHealthz is the liveness endpoint; it always returns 200 with a tiny
+// JSON body so load balancers and orchestrators can probe the service.
 func handleHealthz(w http.ResponseWriter, r *http.Request) {
 	writeJSON(r.Context(), w, http.StatusOK, map[string]string{"status": "ok"})
 }

@@ -123,6 +123,9 @@ func (c *Client) Resolve(ctx context.Context, link string) (*Response, error) {
 	return &out, nil
 }
 
+// truncate returns s clipped to at most n bytes, appending an ellipsis when
+// truncation occurs. Used for Odesli error bodies so we never log a giant
+// HTML error page in full.
 func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s

@@ -92,6 +92,8 @@ func Changed(before, after string) bool {
 	return before != after && after != ""
 }
 
+// isMusicHost reports whether host (or any subdomain of host) belongs to a
+// streaming service Odesli understands. Comparison is case-insensitive.
 func isMusicHost(host string) bool {
 	host = strings.ToLower(host)
 	for _, suffix := range musicHosts {
