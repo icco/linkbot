@@ -43,6 +43,7 @@ rewriting logic lands in follow-up PRs.
 
 | Method | Path | Description |
 |--------|------|-------------|
+| `GET` | `/` | HTML landing page describing the API and the Discord invite. |
 | `POST` | `/sanitize` | Body: `{"url": "..."}`. Returns `{"url", "sanitized", "changed"}`. |
 | `GET` | `/healthz` | Liveness probe. |
 
@@ -65,6 +66,7 @@ curl -sS -X POST http://localhost:8080/sanitize \
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `DISCORD_TOKEN` | no | _(empty)_ | Discord bot token. If unset, only the HTTP API runs. |
+| `DISCORD_CLIENT_ID` | no | _(empty)_ | Discord application client ID. When set, the `/` landing page renders a clickable "Add to server" invite link. |
 | `PORT` | no | `8080` | HTTP listen port. |
 | `ODESLI_API_KEY` | no | _(empty)_ | Odesli API key. The public endpoint works without one but is rate limited. |
 

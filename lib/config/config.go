@@ -18,6 +18,10 @@ type Config struct {
 	// DiscordToken is the bot token. When empty, the Discord bot does not start.
 	DiscordToken string
 
+	// DiscordClientID is the Discord application client ID. When set, the
+	// landing page at / renders a clickable "Add to server" invite link.
+	DiscordClientID string
+
 	// Port is the HTTP API listen port.
 	Port int
 
@@ -28,8 +32,9 @@ type Config struct {
 // Load reads configuration from environment variables.
 func Load() (*Config, error) {
 	c := &Config{
-		DiscordToken: os.Getenv("DISCORD_TOKEN"),
-		OdesliAPIKey: os.Getenv("ODESLI_API_KEY"),
+		DiscordToken:    os.Getenv("DISCORD_TOKEN"),
+		DiscordClientID: os.Getenv("DISCORD_CLIENT_ID"),
+		OdesliAPIKey:    os.Getenv("ODESLI_API_KEY"),
 	}
 
 	port := os.Getenv("PORT")

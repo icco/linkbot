@@ -41,8 +41,12 @@ func main() {
 	san := sanitize.New(odesliClient, log)
 
 	srv := &http.Server{
-		Addr:              fmt.Sprintf(":%d", cfg.Port),
-		Handler:           api.Router(san, log),
+		Addr: fmt.Sprintf(":%d", cfg.Port),
+		Handler: api.Router(api.Options{
+			Sanitizer:       san,
+			Logger:          log,
+			DiscordClientID: cfg.DiscordClientID,
+		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,

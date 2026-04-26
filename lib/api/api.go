@@ -16,19 +16,29 @@ import (
 	"github.com/icco/linkbot/lib/sanitize"
 )
 
+// Options configures the HTTP router. Sanitizer and Logger are required;
+// DiscordClientID is optional and, when set, lets the landing page render a
+// clickable Discord invite link.
+type Options struct {
+	Sanitizer       *sanitize.Sanitizer
+	Logger          *slog.Logger
+	DiscordClientID string
+}
+
 // Router returns an http.Handler with all routes mounted. The base logger is
 // attached to every request's context via logctx, so handlers retrieve it
 // from ctx instead of carrying it on a server struct.
-func Router(san *sanitize.Sanitizer, base *slog.Logger) http.Handler {
+func Router(opts Options) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
-	r.Use(loggerMiddleware(base))
+	r.Use(loggerMiddleware(opts.Logger))
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(30 * time.Second))
 
+	r.Get("/", handleIndex(opts.DiscordClientID))
 	r.Get("/healthz", handleHealthz)
-	r.Post("/sanitize", handleSanitize(san))
+	r.Post("/sanitize", handleSanitize(opts.Sanitizer))
 	return r
 }
 
