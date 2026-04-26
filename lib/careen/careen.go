@@ -7,10 +7,11 @@ package careen
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
-	"math/rand/v2"
+	"math/big"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -51,10 +52,15 @@ var archiveMirrorSet = func() map[string]struct{} {
 }()
 
 // pickArchiveMirror returns a mirror host from archiveMirrors. It is a
-// var so tests can pin a deterministic mirror. Load-spreading only —
-// not security-sensitive, so math/rand/v2 is correct here.
+// var so tests can pin a deterministic mirror. crypto/rand is overkill
+// for load-spreading but cheap enough at one Int per Clean call, and
+// it sidesteps gosec's blanket warning on math/rand.
 var pickArchiveMirror = func() string {
-	return archiveMirrors[rand.IntN(len(archiveMirrors))] //nolint:gosec // G404: load-spreading, not security-sensitive
+	n, err := rand.Int(rand.Reader, big.NewInt(int64(len(archiveMirrors))))
+	if err != nil {
+		return archiveMirrors[0]
+	}
+	return archiveMirrors[n.Int64()]
 }
 
 // paywallHosts triggers archive routing in clean. NYT is intentionally
