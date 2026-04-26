@@ -194,7 +194,8 @@ func TestIndexSecurityHeaders(t *testing.T) {
 }
 
 // TestStaticAssets verifies the embedded brand assets are served with the
-// correct content type and aren't empty.
+// correct content type, aren't empty, and pick up the same security
+// headers as the landing page.
 func TestStaticAssets(t *testing.T) {
 	h := api.Router(api.Options{
 		Sanitizer: stubSanitizer{},
@@ -202,6 +203,14 @@ func TestStaticAssets(t *testing.T) {
 	})
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
+
+	wantHeaders := map[string]string{
+		"Reporting-Endpoints":       `default="https://reportd.natwelch.com/reporting/linkbot"`,
+		"Referrer-Policy":           "strict-origin-when-cross-origin",
+		"X-Content-Type-Options":    "nosniff",
+		"X-Frame-Options":           "DENY",
+		"Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+	}
 
 	for path, wantType := range map[string]string{
 		"/favicon.svg": "image/svg+xml",
@@ -226,6 +235,14 @@ func TestStaticAssets(t *testing.T) {
 		}
 		if len(body) == 0 {
 			t.Errorf("%s body is empty", path)
+		}
+		if csp := resp.Header.Get("Content-Security-Policy"); !strings.Contains(csp, "frame-ancestors 'none'") {
+			t.Errorf("%s CSP missing frame-ancestors; got %q", path, csp)
+		}
+		for header, want := range wantHeaders {
+			if got := resp.Header.Get(header); got != want {
+				t.Errorf("%s %s = %q, want %q", path, header, got, want)
+			}
 		}
 	}
 }
