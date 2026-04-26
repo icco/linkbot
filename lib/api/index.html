@@ -48,17 +48,23 @@
       padding: 0.05em 0.35em;
       border-radius: 4px;
     }
+    .cta { margin: 1.5rem 0 0.5rem; }
     .invite {
       display: inline-block;
-      padding: 0.7rem 1.25rem;
-      margin: 1rem 0 0.25rem;
+      padding: 0.85rem 1.4rem;
       background: #5865f2;
       color: #fff;
       text-decoration: none;
       border-radius: 8px;
       font-weight: 600;
+      font-size: 1.05rem;
+      box-shadow: 0 1px 3px rgba(88, 101, 242, 0.35);
     }
-    .invite:hover, .invite:focus-visible { background: #4752c4; }
+    .invite:hover, .invite:focus-visible {
+      background: #4752c4;
+      box-shadow: 0 2px 6px rgba(88, 101, 242, 0.45);
+    }
+    .perms { margin-top: 0.4rem; font-size: 0.9rem; }
     footer {
       margin-top: 3rem;
       padding-top: 1.25rem;
@@ -71,6 +77,15 @@
 <body>
   <h1>linkbot</h1>
   <p class="tagline">A Discord bot that quietly cleans up the links your friends share.</p>
+
+  {{if .InviteURL}}
+  <p class="cta"><a class="invite" href="{{.InviteURL}}">Add linkbot to your Discord server</a></p>
+  <p class="muted perms">
+    linkbot needs the <em>Send Messages</em> and <em>Read Message History</em>
+    permissions, plus the application&rsquo;s <em>Message Content</em>
+    privileged intent.
+  </p>
+  {{end}}
 
   <h2>What it does</h2>
   <ul>
@@ -94,15 +109,6 @@
       can read along.
     </li>
   </ul>
-
-  {{if .InviteURL}}
-  <p><a class="invite" href="{{.InviteURL}}">Add linkbot to your Discord server</a></p>
-  <p class="muted">
-    linkbot needs the <em>Send Messages</em> and <em>Read Message History</em>
-    permissions, plus the application&rsquo;s <em>Message Content</em>
-    privileged intent.
-  </p>
-  {{end}}
 
   <h2>How to use it</h2>
   <p>
