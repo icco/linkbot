@@ -42,7 +42,13 @@ func Router(opts Options) http.Handler {
 	r.Use(routeTag)
 	r.Use(middleware.Timeout(30 * time.Second))
 
-	r.Get("/", handleIndex(opts.DiscordClientID))
+	r.Group(func(r chi.Router) {
+		r.Use(indexSecure.Handler)
+		r.Use(reportingEndpointsHeader)
+		r.Get("/", handleIndex(opts.DiscordClientID))
+		r.Get("/favicon.svg", handleFavicon)
+		r.Get("/avatar.png", handleAvatar)
+	})
 	r.Get("/healthcheck", handleHealthcheck)
 	r.Post("/sanitize", handleSanitize(opts.Sanitizer))
 
