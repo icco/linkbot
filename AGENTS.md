@@ -97,6 +97,10 @@ BREAKING CHANGE: callers must update to Clean(ctx, url).
   intent isn't obvious from the name.
 - Every package gets a `// Package <name> ...` comment on the `package`
   line of one file (typically the package's primary file).
+- **Keep all comments and godocs concise and short.** One line where
+  possible; two or three at most. If you find yourself writing a
+  multi-paragraph godoc, the prose probably belongs in a README,
+  design doc, or PR description instead.
 - Comments explain **why** and call out non-obvious tradeoffs or
   invariants. Skip obvious narration like `// increment i` or
   `// return the result`.
@@ -105,19 +109,17 @@ BREAKING CHANGE: callers must update to Clean(ctx, url).
 
 ### Logging
 
-- Loggers travel via `context.Context`, not via struct fields. Use
-  `lib/logctx`:
-  - `logctx.New(ctx, log)` to attach a logger.
-  - `logctx.With(ctx, "key", value)` to derive a child logger and rebind
-    it on a new context.
-  - `logctx.From(ctx)` to retrieve the logger inside any function that
-    accepts a context. Falls back to `slog.Default()` when no logger is
-    present.
-- HTTP handlers get the request-scoped logger via the chi middleware
-  registered in `lib/api`. The middleware decorates the logger with the
-  chi `request_id` so logs are correlatable per request.
+- Use `github.com/icco/gutil/logging` (Zap + Zapdriver). Loggers
+  travel via `context.Context`, not via struct fields:
+  - `logging.NewContext(ctx, log, "k", v, ...)` attaches a logger,
+    optionally with extra fields.
+  - `logging.FromContext(ctx)` retrieves the request/event logger.
+  - Use the `*w` methods (`Infow`, `Warnw`, `Errorw`, `Debugw`) for
+    structured key/value pairs and `zap.Error(err)` for errors.
+- HTTP handlers get a request-scoped logger via `logging.Middleware`
+  in `lib/api`, decorated with chi's `request_id`.
 - Discord handlers create a per-event context with channel/message/
-  author IDs attached to the logger before doing work.
+  author IDs attached before doing work.
 
 ### Error handling
 

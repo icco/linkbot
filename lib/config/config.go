@@ -8,24 +8,22 @@ import (
 	"strconv"
 )
 
-// UserCountry is the ISO 3166-1 alpha-2 country code sent to Odesli when
-// resolving links. Hardcoded to US for now; revisit when we need
-// per-deployment configuration.
+// UserCountry is the ISO 3166-1 country code sent to Odesli.
 const UserCountry = "US"
 
 // Config holds the runtime configuration.
 type Config struct {
-	// DiscordToken is the bot token. When empty, the Discord bot does not start.
+	// DiscordToken authorizes the gateway; empty disables the bot.
 	DiscordToken string
 
-	// DiscordClientID is the Discord application client ID. When set, the
-	// landing page at / renders a clickable "Add to server" invite link.
+	// DiscordClientID is the Discord application/client ID; powers the
+	// invite link and slash command registration.
 	DiscordClientID string
 
 	// Port is the HTTP API listen port.
 	Port int
 
-	// OdesliAPIKey is optional. The public Odesli API works without one but is rate limited.
+	// OdesliAPIKey is optional; raises Odesli rate limits.
 	OdesliAPIKey string
 }
 

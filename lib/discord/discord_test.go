@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bwmarrin/discordgo"
 	"github.com/gorilla/websocket"
 )
 
@@ -159,5 +160,35 @@ func TestOnReady_Idempotent(t *testing.T) {
 	case <-b.ready:
 	case <-time.After(time.Second):
 		t.Fatalf("ready channel was not closed by onReady")
+	}
+}
+
+// TestSanitizeCommandShape checks the /sanitize command we hand to
+// discordgo: name, type, and a required string `url` option.
+func TestSanitizeCommandShape(t *testing.T) {
+	t.Parallel()
+
+	cmd := sanitizeCommand()
+	if cmd.Name != sanitizeCommandName {
+		t.Errorf("Name = %q, want %q", cmd.Name, sanitizeCommandName)
+	}
+	if cmd.Type != discordgo.ChatApplicationCommand {
+		t.Errorf("Type = %v, want ChatApplicationCommand", cmd.Type)
+	}
+	if cmd.Description == "" {
+		t.Errorf("Description must not be empty")
+	}
+	if len(cmd.Options) != 1 {
+		t.Fatalf("len(Options) = %d, want 1", len(cmd.Options))
+	}
+	opt := cmd.Options[0]
+	if opt.Name != "url" {
+		t.Errorf("option Name = %q, want \"url\"", opt.Name)
+	}
+	if opt.Type != discordgo.ApplicationCommandOptionString {
+		t.Errorf("option Type = %v, want String", opt.Type)
+	}
+	if !opt.Required {
+		t.Errorf("option Required = false, want true")
 	}
 }

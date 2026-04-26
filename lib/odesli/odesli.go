@@ -1,6 +1,5 @@
-// Package odesli is a client for the Odesli (song.link) API. The
-// default transport is wrapped with otelhttp for auto traces and
-// http.client.request.duration.
+// Package odesli is a client for the Odesli (song.link) API.
+// The default transport is otelhttp-wrapped for traces and metrics.
 package odesli
 
 import (
@@ -55,15 +54,14 @@ func WithBaseURL(u string) Option {
 	}
 }
 
-// WithHTTPClient overrides the HTTP client; callers own its
-// instrumentation.
+// WithHTTPClient overrides the HTTP client; callers own instrumentation.
 func WithHTTPClient(h *http.Client) Option {
 	return func(c *Client) {
 		c.http = h
 	}
 }
 
-// New returns a Client with a 15 s timeout, otelhttp-wrapped transport.
+// New returns a Client with a 15 s timeout and otelhttp transport.
 func New(opts ...Option) *Client {
 	c := &Client{
 		http: &http.Client{
@@ -131,8 +129,7 @@ func (c *Client) Resolve(ctx context.Context, link string) (*Response, error) {
 	return &out, nil
 }
 
-// truncate clips s to n bytes, appending "..." when cut, so giant
-// error bodies don't blow up logs.
+// truncate clips s to n bytes, appending "..." if it had to cut.
 func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s

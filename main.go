@@ -26,8 +26,7 @@ import (
 	"github.com/icco/linkbot/lib/sanitize"
 )
 
-// main wires dependencies and blocks until SIGINT/SIGTERM, then
-// shuts everything down within a 10 s grace window.
+// main wires dependencies and blocks until SIGINT/SIGTERM.
 func main() {
 	log, err := logging.NewLogger("linkbot")
 	if err != nil {
@@ -103,6 +102,14 @@ func main() {
 			os.Exit(1)
 		}
 		bot = b
+
+		if cfg.DiscordClientID != "" {
+			if err := bot.RegisterCommands(ctx, cfg.DiscordClientID); err != nil {
+				log.Warnw("discord slash command registration failed; bot still running", zap.Error(err))
+			}
+		} else {
+			log.Warn("DISCORD_CLIENT_ID not set; skipping slash command registration")
+		}
 	} else {
 		log.Warn("DISCORD_TOKEN not set; running API only")
 	}

@@ -1,4 +1,11 @@
-// Package discord wires the linkbot to Discord through bwmarrin/discordgo.
+// Package discord wires linkbot to Discord via bwmarrin/discordgo.
+//
+// Surfaces:
+//   - a message listener that replies with sanitized URLs;
+//   - a /sanitize global slash command served via InteractionCreate.
+//
+// Both surfaces authenticate with the bot token; no extra OAuth2 dance is
+// required for command registration.
 package discord
 
 import (
@@ -20,20 +27,21 @@ import (
 	"github.com/icco/linkbot/lib/sanitize"
 )
 
-// recentLookback is how many prior channel messages we scan when
-// deduping a sanitized URL.
+// recentLookback is how many prior channel messages we scan to dedupe.
 const recentLookback = 20
 
-// closeDisallowedIntents is the gateway close code for "Disallowed
-// intent(s)" — a privileged intent not enabled in the Developer Portal.
+// closeDisallowedIntents is the gateway close code when a privileged
+// intent isn't enabled in the Developer Portal.
 const closeDisallowedIntents = 4014
 
-// readyTimeout bounds how long Start waits for READY before continuing
-// without a populated session state.
+// readyTimeout bounds how long Start waits for the READY event.
 const readyTimeout = 10 * time.Second
 
-// errReadyTimeout signals that READY did not arrive within readyTimeout.
+// errReadyTimeout signals that READY did not arrive in time.
 var errReadyTimeout = errors.New("discord ready event not received before timeout")
+
+// sanitizeCommandName is the global slash command name.
+const sanitizeCommandName = "sanitize"
 
 // meterName is the OTel meter scope.
 const meterName = "linkbot/discord"
@@ -67,7 +75,24 @@ func recordAction(ctx context.Context, action string) {
 	messagesCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("action", action)))
 }
 
-// Bot listens for messages on Discord and replies with sanitized URLs.
+// sanitizeCommand returns the /sanitize command definition.
+func sanitizeCommand() *discordgo.ApplicationCommand {
+	return &discordgo.ApplicationCommand{
+		Name:        sanitizeCommandName,
+		Type:        discordgo.ChatApplicationCommand,
+		Description: "Sanitize a URL",
+		Options: []*discordgo.ApplicationCommandOption{
+			{
+				Name:        "url",
+				Description: "URL to sanitize",
+				Type:        discordgo.ApplicationCommandOptionString,
+				Required:    true,
+			},
+		},
+	}
+}
+
+// Bot replies to messages with sanitized URLs and serves /sanitize.
 type Bot struct {
 	session   *discordgo.Session
 	san       *sanitize.Sanitizer
@@ -92,19 +117,19 @@ func New(token string, san *sanitize.Sanitizer, base *zap.SugaredLogger) (*Bot, 
 	}
 	s.AddHandler(b.onReady)
 	s.AddHandler(b.handleMessage(base))
+	s.AddHandler(b.handleInteraction(base))
 	return b, nil
 }
 
-// onReady signals Start that the gateway READY event arrived. sync.Once
-// guards against double-close on reconnect-driven re-fires.
+// onReady signals Start that READY arrived; safe across reconnects.
 func (b *Bot) onReady(_ *discordgo.Session, _ *discordgo.Ready) {
 	b.readyOnce.Do(func() {
 		close(b.ready)
 	})
 }
 
-// Start opens the gateway, waits up to readyTimeout for READY, and on a
-// close-4014 from Open() wraps the error with a Developer Portal hint.
+// Start opens the gateway and waits up to readyTimeout for READY,
+// adding a Developer Portal hint when Open() fails with close 4014.
 func (b *Bot) Start(ctx context.Context) error {
 	if err := b.session.Open(); err != nil {
 		if hint := intentHint(err, b.applicationID()); hint != "" {
@@ -135,8 +160,7 @@ func (b *Bot) Close() error {
 	return b.session.Close()
 }
 
-// applicationID returns the bot's application ID from session state, or
-// "". Defensive about nil pointers since callers run on the unhappy path.
+// applicationID returns the bot's application ID, or "" if unknown.
 func (b *Bot) applicationID() string {
 	if b == nil || b.session == nil || b.session.State == nil {
 		return ""
@@ -147,9 +171,7 @@ func (b *Bot) applicationID() string {
 	return ""
 }
 
-// waitForReady blocks until ready closes, ctx is done, or timeout
-// elapses. Returns errReadyTimeout on timeout and a wrapped ctx.Err on
-// cancel.
+// waitForReady blocks until ready closes, ctx is done, or timeout fires.
 func waitForReady(ctx context.Context, ready <-chan struct{}, timeout time.Duration) error {
 	select {
 	case <-ready:
@@ -161,9 +183,8 @@ func waitForReady(ctx context.Context, ready <-chan struct{}, timeout time.Durat
 	}
 }
 
-// intentHint returns a Developer Portal hint when err's chain contains
-// a websocket close 4014, or "" otherwise. With a non-empty appID it
-// deep-links to that bot's page; otherwise it links to the portal root.
+// intentHint returns a Developer Portal hint when err wraps a close
+// 4014, or "" otherwise. Deep-links to appID's bot page when set.
 func intentHint(err error, appID string) string {
 	if err == nil {
 		return ""
@@ -181,7 +202,24 @@ func intentHint(err error, appID string) string {
 	return "gateway rejected privileged intent(s) (close 4014); enable Message Content Intent for your application at https://discord.com/developers/applications"
 }
 
-// handleMessage returns the MessageCreate handler. Bot/own messages
+// RegisterCommands bulk-overwrites the global slash commands with /sanitize.
+// applicationID is the bot's app/client ID; pass cfg.DiscordClientID.
+func (b *Bot) RegisterCommands(ctx context.Context, applicationID string) error {
+	if applicationID == "" {
+		return fmt.Errorf("register commands: empty applicationID")
+	}
+	cmds := []*discordgo.ApplicationCommand{sanitizeCommand()}
+	if _, err := b.session.ApplicationCommandBulkOverwrite(applicationID, "", cmds, discordgo.WithContext(ctx)); err != nil {
+		return fmt.Errorf("register commands: %w", err)
+	}
+	logging.FromContext(ctx).Infow("discord slash commands registered",
+		"command", sanitizeCommandName,
+		"application_id", applicationID,
+	)
+	return nil
+}
+
+// handleMessage returns the MessageCreate handler; bot/own messages
 // are ignored to avoid feedback loops.
 func (b *Bot) handleMessage(base *zap.SugaredLogger) func(*discordgo.Session, *discordgo.MessageCreate) {
 	return func(s *discordgo.Session, m *discordgo.MessageCreate) {
@@ -223,9 +261,107 @@ func (b *Bot) handleMessage(base *zap.SugaredLogger) func(*discordgo.Session, *d
 	}
 }
 
-// buildReplies sanitizes each URL and drops unchanged ones or any
-// already present in the message or recent channel history, so we
-// don't pile on top of another bot's reply.
+// handleInteraction returns the InteractionCreate handler; only
+// /sanitize is serviced, everything else is ignored.
+func (b *Bot) handleInteraction(base *zap.SugaredLogger) func(*discordgo.Session, *discordgo.InteractionCreate) {
+	return func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+		if i.Type != discordgo.InteractionApplicationCommand {
+			return
+		}
+		data := i.ApplicationCommandData()
+		if data.Name != sanitizeCommandName {
+			return
+		}
+
+		fields := []interface{}{
+			"interaction_id", i.ID,
+			"command", data.Name,
+		}
+		if i.ChannelID != "" {
+			fields = append(fields, "channel_id", i.ChannelID)
+		}
+		if i.GuildID != "" {
+			fields = append(fields, "guild_id", i.GuildID)
+		}
+		if user := interactionUser(i); user != nil {
+			fields = append(fields, "user_id", user.ID)
+		}
+
+		ctx, cancel := context.WithTimeout(
+			logging.NewContext(context.Background(), base, fields...),
+			20*time.Second,
+		)
+		defer cancel()
+		log := logging.FromContext(ctx)
+
+		raw := optionString(data.Options, "url")
+		if raw == "" {
+			respondInteractionError(s, i, log, "missing required `url` option")
+			return
+		}
+
+		clean, err := b.san.URL(ctx, raw)
+		if err != nil {
+			log.Errorw("interaction sanitize failed", "url", raw, zap.Error(err))
+			respondInteractionError(s, i, log, "could not sanitize that URL")
+			return
+		}
+
+		var content string
+		if sanitize.Changed(raw, clean) {
+			content = clean
+		} else {
+			content = "No sanitization needed: " + raw
+		}
+
+		if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: content,
+			},
+		}); err != nil {
+			log.Errorw("interaction respond failed", zap.Error(err))
+		}
+	}
+}
+
+// interactionUser returns the invoking user (Member.User for guilds,
+// User for DMs).
+func interactionUser(i *discordgo.InteractionCreate) *discordgo.User {
+	if i.Member != nil && i.Member.User != nil {
+		return i.Member.User
+	}
+	return i.User
+}
+
+// optionString returns the named string option, or "" if absent.
+func optionString(opts []*discordgo.ApplicationCommandInteractionDataOption, name string) string {
+	for _, o := range opts {
+		if o == nil {
+			continue
+		}
+		if o.Name == name && o.Type == discordgo.ApplicationCommandOptionString {
+			return o.StringValue()
+		}
+	}
+	return ""
+}
+
+// respondInteractionError sends an ephemeral error reply with summary.
+func respondInteractionError(s *discordgo.Session, i *discordgo.InteractionCreate, log *zap.SugaredLogger, summary string) {
+	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content: summary,
+			Flags:   discordgo.MessageFlagsEphemeral,
+		},
+	})
+	if err != nil {
+		log.Errorw("interaction error respond failed", zap.Error(err))
+	}
+}
+
+// buildReplies sanitizes urls and drops unchanged or already-posted ones.
 func (b *Bot) buildReplies(ctx context.Context, s *discordgo.Session, m *discordgo.MessageCreate, urls []string) []string {
 	log := logging.FromContext(ctx)
 
