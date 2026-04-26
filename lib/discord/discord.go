@@ -3,12 +3,15 @@ package discord
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
+	"github.com/gorilla/websocket"
 	"github.com/icco/linkbot/lib/logctx"
 	"github.com/icco/linkbot/lib/sanitize"
 )
@@ -17,10 +20,23 @@ import (
 // sanitized URL has already been posted in the channel.
 const recentLookback = 20
 
+// closeDisallowedIntents is the gateway close code for "Disallowed
+// intent(s)" — a privileged intent not enabled in the Developer Portal.
+const closeDisallowedIntents = 4014
+
+// readyTimeout bounds how long Start waits for READY before continuing
+// without a populated session state.
+const readyTimeout = 10 * time.Second
+
+// errReadyTimeout signals that READY did not arrive within readyTimeout.
+var errReadyTimeout = errors.New("discord ready event not received before timeout")
+
 // Bot listens for messages on Discord and replies with sanitized URLs.
 type Bot struct {
-	session *discordgo.Session
-	san     *sanitize.Sanitizer
+	session   *discordgo.Session
+	san       *sanitize.Sanitizer
+	ready     chan struct{}
+	readyOnce sync.Once
 }
 
 // New creates a new Discord bot. It does not open the gateway connection.
@@ -34,23 +50,99 @@ func New(token string, san *sanitize.Sanitizer, base *slog.Logger) (*Bot, error)
 		discordgo.IntentsDirectMessages |
 		discordgo.IntentMessageContent
 
-	b := &Bot{session: s, san: san}
+	b := &Bot{
+		session: s,
+		san:     san,
+		ready:   make(chan struct{}),
+	}
+	s.AddHandler(b.onReady)
 	s.AddHandler(b.handleMessage(base))
 	return b, nil
 }
 
-// Start opens the gateway connection.
+// onReady signals Start that the gateway READY event arrived. sync.Once
+// guards against double-close on reconnect-driven re-fires.
+func (b *Bot) onReady(_ *discordgo.Session, _ *discordgo.Ready) {
+	b.readyOnce.Do(func() {
+		close(b.ready)
+	})
+}
+
+// Start opens the gateway, waits up to readyTimeout for READY, and on a
+// close-4014 from Open() wraps the error with a Developer Portal hint.
 func (b *Bot) Start(ctx context.Context) error {
 	if err := b.session.Open(); err != nil {
+		if hint := intentHint(err, b.applicationID()); hint != "" {
+			return fmt.Errorf("discord open: %s: %w", hint, err)
+		}
 		return fmt.Errorf("discord open: %w", err)
 	}
-	logctx.From(ctx).Info("discord bot connected", "user", b.session.State.User.Username)
+
+	log := logctx.From(ctx)
+	err := waitForReady(ctx, b.ready, readyTimeout)
+	switch {
+	case err == nil:
+		if u := b.session.State.User; u != nil {
+			log.Info("discord bot connected", "user", u.Username, "user_id", u.ID)
+		} else {
+			log.Warn("discord ready received but no user state")
+		}
+	case errors.Is(err, errReadyTimeout):
+		log.Warn("discord ready event not received before timeout", "timeout", readyTimeout)
+	default:
+		return err
+	}
 	return nil
 }
 
 // Close shuts down the gateway connection.
 func (b *Bot) Close() error {
 	return b.session.Close()
+}
+
+// applicationID returns the bot's application ID from session state, or "".
+// Defensive about nil pointers since callers run on the unhappy path.
+func (b *Bot) applicationID() string {
+	if b == nil || b.session == nil || b.session.State == nil {
+		return ""
+	}
+	if app := b.session.State.Application; app != nil {
+		return app.ID
+	}
+	return ""
+}
+
+// waitForReady blocks until ready closes, ctx is done, or timeout elapses.
+// Returns errReadyTimeout on timeout and a wrapped ctx.Err() on cancel.
+func waitForReady(ctx context.Context, ready <-chan struct{}, timeout time.Duration) error {
+	select {
+	case <-ready:
+		return nil
+	case <-time.After(timeout):
+		return errReadyTimeout
+	case <-ctx.Done():
+		return fmt.Errorf("discord ready wait: %w", ctx.Err())
+	}
+}
+
+// intentHint returns a Developer Portal hint when err's chain contains a
+// websocket close 4014, or "" otherwise. With a non-empty appID it
+// deep-links to that bot's page; otherwise it links to the portal root.
+func intentHint(err error, appID string) string {
+	if err == nil {
+		return ""
+	}
+	var ce *websocket.CloseError
+	if !errors.As(err, &ce) || ce.Code != closeDisallowedIntents {
+		return ""
+	}
+	if appID != "" {
+		return fmt.Sprintf(
+			"gateway rejected privileged intent(s) (close 4014); enable Message Content Intent at https://discord.com/developers/applications/%s/bot",
+			appID,
+		)
+	}
+	return "gateway rejected privileged intent(s) (close 4014); enable Message Content Intent for your application at https://discord.com/developers/applications"
 }
 
 // handleMessage returns the discordgo MessageCreate handler. It closes over
