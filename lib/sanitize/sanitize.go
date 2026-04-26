@@ -1,6 +1,5 @@
-// Package sanitize rewrites URLs to friendlier forms. Music streaming
-// links are resolved through the Odesli (song.link) API; everything else
-// flows through the careen package's host-aware rule engine.
+// Package sanitize rewrites URLs: music links via Odesli (song.link),
+// everything else via careen's host-aware rules.
 package sanitize
 
 import (
@@ -16,8 +15,7 @@ import (
 	"github.com/icco/linkbot/lib/odesli"
 )
 
-// urlRE matches http(s) URLs, stopping at whitespace, quotes, and
-// angle brackets so trailing chat punctuation isn't pulled in.
+// urlRE matches http(s) URLs, stopping at whitespace, quotes, and angle brackets.
 var urlRE = regexp.MustCompile(`https?://[^\s<>"'\x60]+`)
 
 // musicHosts lists the streaming hosts Odesli understands.
@@ -43,8 +41,7 @@ var musicHosts = []string{
 // defaultHTTPTimeout caps outbound calls made by careen.Clean.
 const defaultHTTPTimeout = 5 * time.Second
 
-// Sanitizer rewrites URLs: music links via Odesli, everything else
-// via careen.Clean.
+// Sanitizer rewrites URLs via Odesli or careen.Clean.
 type Sanitizer struct {
 	odesli *odesli.Client
 	hc     *http.Client
@@ -72,8 +69,7 @@ func New(o *odesli.Client, opts ...Option) *Sanitizer {
 	return s
 }
 
-// FindURLs returns all http(s) URLs in text, with trailing punctuation
-// trimmed.
+// FindURLs returns http(s) URLs in text, with trailing punctuation trimmed.
 func FindURLs(text string) []string {
 	matches := urlRE.FindAllString(text, -1)
 	out := make([]string, 0, len(matches))

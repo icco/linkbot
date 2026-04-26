@@ -28,12 +28,10 @@ import (
 	"golang.org/x/oauth2/clientcredentials"
 )
 
-// discordOAuthEndpoint is the Discord OAuth2 token endpoint used for the
-// client-credentials grant. v10 is the current GA version.
+// discordOAuthEndpoint is Discord's v10 OAuth2 token endpoint.
 const discordOAuthEndpoint = "https://discord.com/api/v10/oauth2/token"
 
-// main wires dependencies and blocks until SIGINT/SIGTERM, then
-// shuts everything down within a 10 s grace window.
+// main wires dependencies and blocks until SIGINT/SIGTERM.
 func main() {
 	log, err := logging.NewLogger("linkbot")
 	if err != nil {

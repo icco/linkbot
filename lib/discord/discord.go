@@ -1,15 +1,12 @@
-// Package discord wires the linkbot to Discord through bwmarrin/discordgo.
+// Package discord wires linkbot to Discord via bwmarrin/discordgo.
 //
-// Two surfaces are supported side by side:
-//   - the original message listener that reads channel messages and replies
-//     with a sanitized URL when one is found;
-//   - a /sanitize global slash command, registered via the OAuth2
-//     client-credentials grant from [golang.org/x/oauth2/clientcredentials]
-//     and serviced through an InteractionCreate handler.
+// Surfaces:
+//   - a message listener that replies with sanitized URLs;
+//   - a /sanitize global slash command registered via OAuth2
+//     client-credentials and served from an InteractionCreate handler.
 //
-// The bot token is still required for the gateway connection — Discord
-// does not allow client-credentials to authorize a gateway, so OAuth2
-// only powers REST calls (slash command registration and similar).
+// The bot token still authenticates the gateway; OAuth2 only signs REST
+// calls (slash command registration today).
 package discord
 
 import (
@@ -35,37 +32,29 @@ import (
 	"github.com/icco/linkbot/lib/sanitize"
 )
 
-// recentLookback is how many prior channel messages we scan when
-// deduping a sanitized URL.
+// recentLookback is how many prior channel messages we scan to dedupe.
 const recentLookback = 20
 
-// closeDisallowedIntents is the gateway close code for "Disallowed
-// intent(s)" — a privileged intent not enabled in the Developer Portal.
+// closeDisallowedIntents is the gateway close code when a privileged
+// intent isn't enabled in the Developer Portal.
 const closeDisallowedIntents = 4014
 
-// readyTimeout bounds how long Start waits for READY before continuing
-// without a populated session state.
+// readyTimeout bounds how long Start waits for the READY event.
 const readyTimeout = 10 * time.Second
 
-// errReadyTimeout signals that READY did not arrive within readyTimeout.
+// errReadyTimeout signals that READY did not arrive in time.
 var errReadyTimeout = errors.New("discord ready event not received before timeout")
 
-// discordRESTBaseURL is the Discord REST API root used for slash command
-// registration. v10 is the current GA version; bump when Discord deprecates.
+// discordRESTBaseURL is Discord's v10 REST API root.
 const discordRESTBaseURL = "https://discord.com/api/v10"
 
-// userAgent is sent on every outbound REST request originating from this
-// package (slash command registration today).
+// userAgent is sent on every outbound REST request.
 const userAgent = "linkbot/0.1 (+https://github.com/icco/linkbot)"
 
-// sanitizeCommandName is the global slash command name registered with
-// Discord. Kept as a package-level const so it can be referenced from both
-// RegisterCommands and the interaction handler without drift.
+// sanitizeCommandName is the global slash command name.
 const sanitizeCommandName = "sanitize"
 
-// errorBodyLimit caps how many bytes of an error response body we surface
-// in wrapped errors when Discord returns a non-2xx for command
-// registration.
+// errorBodyLimit caps how many bytes of a Discord error body we surface.
 const errorBodyLimit = 512
 
 // meterName is the OTel meter scope.
@@ -100,9 +89,8 @@ func recordAction(ctx context.Context, action string) {
 	messagesCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("action", action)))
 }
 
-// applicationCommandOption mirrors the subset of Discord's
-// application-command-option schema we send when registering /sanitize.
-// Type 3 = STRING per Discord's command option type table.
+// applicationCommandOption is Discord's command-option schema subset.
+// Type 3 = STRING.
 type applicationCommandOption struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
@@ -110,8 +98,8 @@ type applicationCommandOption struct {
 	Required    bool   `json:"required,omitempty"`
 }
 
-// applicationCommand mirrors the subset of Discord's application-command
-// schema we send when registering /sanitize. Type 1 = CHAT_INPUT (slash).
+// applicationCommand is Discord's command schema subset.
+// Type 1 = CHAT_INPUT.
 type applicationCommand struct {
 	Name        string                     `json:"name"`
 	Description string                     `json:"description"`
@@ -119,9 +107,7 @@ type applicationCommand struct {
 	Options     []applicationCommandOption `json:"options,omitempty"`
 }
 
-// sanitizeCommand returns the application command definition we register
-// with Discord. Returning a fresh value avoids accidental cross-test
-// aliasing in callers that mutate the slice.
+// sanitizeCommand returns the /sanitize command definition.
 func sanitizeCommand() applicationCommand {
 	return applicationCommand{
 		Name:        sanitizeCommandName,
@@ -138,8 +124,7 @@ func sanitizeCommand() applicationCommand {
 	}
 }
 
-// Bot listens for messages on Discord and replies with sanitized URLs. It
-// also serves the /sanitize slash command when registered.
+// Bot replies to messages with sanitized URLs and serves /sanitize.
 type Bot struct {
 	session   *discordgo.Session
 	san       *sanitize.Sanitizer
@@ -168,16 +153,15 @@ func New(token string, san *sanitize.Sanitizer, base *zap.SugaredLogger) (*Bot, 
 	return b, nil
 }
 
-// onReady signals Start that the gateway READY event arrived. sync.Once
-// guards against double-close on reconnect-driven re-fires.
+// onReady signals Start that READY arrived; safe across reconnects.
 func (b *Bot) onReady(_ *discordgo.Session, _ *discordgo.Ready) {
 	b.readyOnce.Do(func() {
 		close(b.ready)
 	})
 }
 
-// Start opens the gateway, waits up to readyTimeout for READY, and on a
-// close-4014 from Open() wraps the error with a Developer Portal hint.
+// Start opens the gateway and waits up to readyTimeout for READY,
+// adding a Developer Portal hint when Open() fails with close 4014.
 func (b *Bot) Start(ctx context.Context) error {
 	if err := b.session.Open(); err != nil {
 		if hint := intentHint(err, b.applicationID()); hint != "" {
@@ -208,8 +192,7 @@ func (b *Bot) Close() error {
 	return b.session.Close()
 }
 
-// applicationID returns the bot's application ID from session state, or
-// "". Defensive about nil pointers since callers run on the unhappy path.
+// applicationID returns the bot's application ID, or "" if unknown.
 func (b *Bot) applicationID() string {
 	if b == nil || b.session == nil || b.session.State == nil {
 		return ""
@@ -220,9 +203,7 @@ func (b *Bot) applicationID() string {
 	return ""
 }
 
-// waitForReady blocks until ready closes, ctx is done, or timeout
-// elapses. Returns errReadyTimeout on timeout and a wrapped ctx.Err on
-// cancel.
+// waitForReady blocks until ready closes, ctx is done, or timeout fires.
 func waitForReady(ctx context.Context, ready <-chan struct{}, timeout time.Duration) error {
 	select {
 	case <-ready:
@@ -234,9 +215,8 @@ func waitForReady(ctx context.Context, ready <-chan struct{}, timeout time.Durat
 	}
 }
 
-// intentHint returns a Developer Portal hint when err's chain contains
-// a websocket close 4014, or "" otherwise. With a non-empty appID it
-// deep-links to that bot's page; otherwise it links to the portal root.
+// intentHint returns a Developer Portal hint when err wraps a close
+// 4014, or "" otherwise. Deep-links to appID's bot page when set.
 func intentHint(err error, appID string) string {
 	if err == nil {
 		return ""
@@ -254,22 +234,10 @@ func intentHint(err error, appID string) string {
 	return "gateway rejected privileged intent(s) (close 4014); enable Message Content Intent for your application at https://discord.com/developers/applications"
 }
 
-// RegisterCommands PUT-overwrites the global application command set so
-// that linkbot's /sanitize slash command is available in every guild that
-// has installed the application.
-//
-// applicationID is passed explicitly (rather than read from the session)
-// to keep the dependency direction clean: command registration must work
-// even if the gateway has not yet finished its READY handshake. main
-// supplies cfg.DiscordClientID which equals the application ID for bot
-// applications.
-//
-// httpClient is expected to attach an OAuth2 bearer token automatically
-// (e.g. produced by [golang.org/x/oauth2/clientcredentials.Config.Client]),
-// which keeps token caching, refresh, and Basic-auth encoding out of this
-// package. A plain *http.Client also works when the caller has wired auth
-// some other way; in that case Discord will return 401 and the wrapped
-// status code surfaces the misconfiguration.
+// RegisterCommands PUT-overwrites the global slash commands with
+// /sanitize. httpClient should attach OAuth2 (e.g. from
+// [golang.org/x/oauth2/clientcredentials.Config.Client]); applicationID
+// is the bot's app/client ID.
 func (b *Bot) RegisterCommands(ctx context.Context, httpClient *http.Client, applicationID string) error {
 	if applicationID == "" {
 		return fmt.Errorf("register commands: empty applicationID")
@@ -319,7 +287,7 @@ func (b *Bot) RegisterCommands(ctx context.Context, httpClient *http.Client, app
 	return nil
 }
 
-// handleMessage returns the MessageCreate handler. Bot/own messages
+// handleMessage returns the MessageCreate handler; bot/own messages
 // are ignored to avoid feedback loops.
 func (b *Bot) handleMessage(base *zap.SugaredLogger) func(*discordgo.Session, *discordgo.MessageCreate) {
 	return func(s *discordgo.Session, m *discordgo.MessageCreate) {
@@ -361,10 +329,8 @@ func (b *Bot) handleMessage(base *zap.SugaredLogger) func(*discordgo.Session, *d
 	}
 }
 
-// handleInteraction returns the discordgo InteractionCreate handler. Only
-// application-command interactions for /sanitize are serviced; other
-// interaction types fall through silently so future commands or component
-// callbacks can be layered on without surprising existing users.
+// handleInteraction returns the InteractionCreate handler; only
+// /sanitize is serviced, everything else is ignored.
 func (b *Bot) handleInteraction(base *zap.SugaredLogger) func(*discordgo.Session, *discordgo.InteractionCreate) {
 	return func(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		if i.Type != discordgo.InteractionApplicationCommand {
@@ -427,9 +393,8 @@ func (b *Bot) handleInteraction(base *zap.SugaredLogger) func(*discordgo.Session
 	}
 }
 
-// interactionUser returns the user who triggered the interaction. Discord
-// puts the user on Member.User for guild interactions and on User for DMs;
-// the helper hides that branching from callers.
+// interactionUser returns the invoking user (Member.User for guilds,
+// User for DMs).
 func interactionUser(i *discordgo.InteractionCreate) *discordgo.User {
 	if i.Member != nil && i.Member.User != nil {
 		return i.Member.User
@@ -437,9 +402,7 @@ func interactionUser(i *discordgo.InteractionCreate) *discordgo.User {
 	return i.User
 }
 
-// optionString returns the string value of the named option, or "" when
-// the option is absent or not a string. Discord guarantees the type but
-// we still defensively check before calling StringValue.
+// optionString returns the named string option, or "" if absent.
 func optionString(opts []*discordgo.ApplicationCommandInteractionDataOption, name string) string {
 	for _, o := range opts {
 		if o == nil {
@@ -452,9 +415,7 @@ func optionString(opts []*discordgo.ApplicationCommandInteractionDataOption, nam
 	return ""
 }
 
-// respondInteractionError sends an ephemeral error message back to the
-// invoking user. The internal error is already logged by the caller; we
-// only surface a short, user-safe summary to avoid leaking internals.
+// respondInteractionError sends an ephemeral error reply with summary.
 func respondInteractionError(s *discordgo.Session, i *discordgo.InteractionCreate, log *zap.SugaredLogger, summary string) {
 	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
@@ -468,9 +429,7 @@ func respondInteractionError(s *discordgo.Session, i *discordgo.InteractionCreat
 	}
 }
 
-// buildReplies sanitizes each URL and drops unchanged ones or any
-// already present in the message or recent channel history, so we
-// don't pile on top of another bot's reply.
+// buildReplies sanitizes urls and drops unchanged or already-posted ones.
 func (b *Bot) buildReplies(ctx context.Context, s *discordgo.Session, m *discordgo.MessageCreate, urls []string) []string {
 	log := logging.FromContext(ctx)
 
@@ -519,9 +478,7 @@ func recentlyPosted(s *discordgo.Session, channelID, beforeID, target string) (b
 	return false, nil
 }
 
-// truncate clips s to at most n bytes, appending an ellipsis when
-// truncation occurs. Used to keep error bodies bounded when Discord
-// returns a non-2xx for command registration.
+// truncate clips s to n bytes, appending "..." if it had to cut.
 func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s

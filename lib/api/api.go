@@ -22,14 +22,12 @@ import (
 // serverName is the otelhttp span/metric scope.
 const serverName = "linkbot"
 
-// sanitizer is the slice of *sanitize.Sanitizer the handlers need; the
-// interface lets tests inject a fake.
+// sanitizer is the handler-side slice of *sanitize.Sanitizer; it lets tests fake it.
 type sanitizer interface {
 	URL(ctx context.Context, raw string) (string, error)
 }
 
-// Options configures the HTTP router. MetricsHandler, when set, is
-// mounted at GET /metrics.
+// Options configures the HTTP router. MetricsHandler is mounted at /metrics.
 type Options struct {
 	Sanitizer       sanitizer
 	Logger          *zap.SugaredLogger
@@ -37,10 +35,7 @@ type Options struct {
 	MetricsHandler  http.Handler
 }
 
-// Router returns the linkbot HTTP handler. otelhttp wraps the chi
-// router (skipping /metrics so scrapes don't self-instrument); inside,
-// gutil's Middleware injects the per-request logger and routeTag
-// stamps the chi route pattern onto otelhttp's metric labeler.
+// Router returns the HTTP handler, wrapped with otelhttp (excluding /metrics).
 func Router(opts Options) http.Handler {
 	r := chi.NewRouter()
 	r.Use(logging.Middleware(opts.Logger.Desugar()))
@@ -62,8 +57,7 @@ func Router(opts Options) http.Handler {
 	)
 }
 
-// routeTag tags the otelhttp metric with the chi route pattern so
-// http.server.request.duration buckets by route, not raw URL.
+// routeTag stamps the chi route pattern onto otelhttp metric labels.
 func routeTag(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		next.ServeHTTP(w, r)
@@ -121,8 +115,7 @@ func handleHealthcheck(w http.ResponseWriter, r *http.Request) {
 	writeJSON(r.Context(), w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// writeJSON writes body as JSON with status; encode errors are logged
-// to the request-scoped logger.
+// writeJSON writes body as JSON with status, logging encode errors.
 func writeJSON(ctx context.Context, w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -131,8 +124,7 @@ func writeJSON(ctx context.Context, w http.ResponseWriter, status int, body any)
 	}
 }
 
-// writeError logs err and emits a JSON error body. The error type
-// (vs string) preserves wrapped causes.
+// writeError logs err and emits a JSON error body.
 func writeError(r *http.Request, w http.ResponseWriter, status int, err error) {
 	logging.FromContext(r.Context()).Errorw("http error",
 		"status", status,

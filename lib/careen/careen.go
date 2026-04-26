@@ -1,11 +1,7 @@
-// Package careen rewrites URLs to drop tracking parameters and unwrap
-// redirect/wrapper hosts (Google search, Amazon, Apple News, YouTube,
-// search.app, …).
+// Package careen drops URL tracking params and unwraps redirect hosts.
 //
-// The host-pattern rules and per-host strategies are a Go port of
-// github.com/timball/Careen, copyright Tim Ball (@timball). The
-// opinionated paywall-bypass and archive-mirror logic from Careen is
-// deliberately not ported.
+// Host rules and strategies are a Go port of github.com/timball/Careen
+// (©Tim Ball). Paywall-bypass and archive-mirror logic is not ported.
 package careen
 
 import (
@@ -31,8 +27,8 @@ const (
 // strategy produces a cleaned URL for u.
 type strategy func(context.Context, *url.URL) (string, error)
 
-// rule pairs a host regexp with a strategy factory. The factory takes the
-// active *cleaner so HTTP-using strategies can recurse.
+// rule pairs a host regexp with a strategy factory; the factory receives
+// the active *cleaner so HTTP-using strategies can recurse.
 type rule struct {
 	pattern *regexp.Regexp
 	make    func(*cleaner) strategy
@@ -45,8 +41,7 @@ func static(s strategy) func(*cleaner) strategy {
 	}
 }
 
-// rules is populated in init to break the var-init cycle caused by
-// rules → cleaner.appleNews → cleaner.clean → rules.
+// rules is populated in init to break the var-init cycle.
 var rules []rule
 
 func init() {
@@ -74,16 +69,14 @@ func init() {
 	}
 }
 
-// cleaner is the per-call state. It is not safe for concurrent use; hop
-// is mutated as the engine recurses.
+// cleaner is per-call state; not safe for concurrent use.
 type cleaner struct {
 	http    *http.Client
 	maxHops int
 	hop     int
 }
 
-// Clean returns a cleaned version of raw. Non-http(s) URLs are returned
-// unchanged. hc must not be nil.
+// Clean returns a cleaned raw; non-http(s) URLs pass through. hc must be non-nil.
 func Clean(ctx context.Context, raw string, hc *http.Client) (string, error) {
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -96,8 +89,7 @@ func Clean(ctx context.Context, raw string, hc *http.Client) (string, error) {
 	return c.clean(ctx, u)
 }
 
-// clean dispatches u to the matching strategy, enforcing the recursion
-// cap.
+// clean dispatches u to the matching strategy under the hop cap.
 func (c *cleaner) clean(ctx context.Context, u *url.URL) (string, error) {
 	if u.Scheme != "http" && u.Scheme != "https" {
 		return u.String(), nil
@@ -133,8 +125,7 @@ func keepAll(_ context.Context, u *url.URL) (string, error) {
 	return u.String(), nil
 }
 
-// keepSpecificParams keeps only the named query params, then merges
-// extra on top. The fragment is always dropped.
+// keepSpecificParams keeps only named query params, merges extra, drops fragment.
 func keepSpecificParams(keep []string, extra map[string]string) strategy {
 	set := make(map[string]struct{}, len(keep))
 	for _, k := range keep {
@@ -172,12 +163,11 @@ func amazonStrategy(_ context.Context, u *url.URL) (string, error) {
 	return next.String(), nil
 }
 
-// appleNewsRE captures the destination URL embedded in apple.news wrapper
-// pages, which inline a redirectToUrlAfterTimeout("...") call.
+// appleNewsRE captures the embedded redirect target in apple.news wrappers.
 var appleNewsRE = regexp.MustCompile(`redirectToUrlAfterTimeout\("([^"]+)"`)
 
-// appleNews scrapes the wrapper for its embedded redirect URL and
-// recurses. On any failure it returns u untouched.
+// appleNews scrapes the wrapper for its redirect URL and recurses; on
+// any failure it returns u untouched.
 func (c *cleaner) appleNews() strategy {
 	return func(ctx context.Context, u *url.URL) (string, error) {
 		log := logging.FromContext(ctx)
@@ -199,8 +189,7 @@ func (c *cleaner) appleNews() strategy {
 	}
 }
 
-// followRedirect issues a GET with redirects disabled and recurses on the
-// Location header. Non-3xx responses leave u untouched.
+// followRedirect GETs without auto-redirect and recurses on Location.
 func (c *cleaner) followRedirect() strategy {
 	return func(ctx context.Context, u *url.URL) (string, error) {
 		log := logging.FromContext(ctx)
