@@ -28,11 +28,8 @@ const (
 	bodyReadLimit  = 1 << 20
 )
 
-// archiveMirrors are the Memento-protocol mirrors used to bypass
-// paywallHosts; one is picked at random per archive routing to spread
-// load. URLs whose host is in this list are also treated as
-// already-archived and returned untouched to avoid double-wrapping.
-// All entries resolve to the same Memento service.
+// archiveMirrors are interchangeable archive.today aliases used for
+// paywall routing and already-archived loop prevention.
 var archiveMirrors = []string{
 	"archive.fo",
 	"archive.is",
