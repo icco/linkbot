@@ -52,9 +52,7 @@ var archiveMirrorSet = func() map[string]struct{} {
 }()
 
 // pickArchiveMirror returns a mirror host from archiveMirrors. It is a
-// var so tests can pin a deterministic mirror. crypto/rand is overkill
-// for load-spreading but cheap enough at one Int per Clean call, and
-// it sidesteps gosec's blanket warning on math/rand.
+// var so tests can pin a deterministic mirror via pinMirror.
 var pickArchiveMirror = func() string {
 	n, err := rand.Int(rand.Reader, big.NewInt(int64(len(archiveMirrors))))
 	if err != nil {
