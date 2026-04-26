@@ -11,9 +11,9 @@ Stack: Go, [chi](https://github.com/go-chi/chi), [discordgo](https://github.com/
 
 ## News-link sanitization
 
-Non-music URLs flow through a host-aware rule engine that strips tracking parameters and unwraps
-redirect wrappers. Rule set ported from [timball/Careen](https://github.com/timball/Careen);
-hosts currently covered include:
+Non-music URLs flow through a host-aware rule engine in `lib/careen` that strips tracking
+parameters and unwraps redirect wrappers. The rule set is ported from
+[timball/Careen](https://github.com/timball/Careen); hosts currently covered include:
 
 - **Google Workspace** (`docs|drive|sheets|slides|forms|mail|calendar|sites|meet|chat|contacts.google.*`):
   keep `tab`, `gid`, `usp`, `authuser`.
@@ -83,8 +83,7 @@ enforced on every PR.
 
 ## Acknowledgements
 
-Thanks to [Tim Ball (`@timball`)](https://github.com/timball) — the news-link rule set in
-`lib/sanitize` is a Go port of [timball/Careen](https://github.com/timball/Careen), with the
-same host patterns, parameter allowlists, and recursive Apple News / `search.app` handling.
-The opinionated paywall-bypass and archive-mirror rules from Careen are deliberately not
-ported.
+Thanks to [Tim Ball (`@timball`)](https://github.com/timball) — the `lib/careen` package is a
+Go port of [timball/Careen](https://github.com/timball/Careen), with the same host patterns,
+parameter allowlists, and recursive Apple News / `search.app` handling. The opinionated
+paywall-bypass and archive-mirror rules from Careen are deliberately not ported.
