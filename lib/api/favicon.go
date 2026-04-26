@@ -12,8 +12,7 @@ var faviconSVG []byte
 // avatar and the landing-page brand mark. Regenerate with:
 //
 //	qlmanage -t -s 1024 -o /tmp lib/api/favicon.svg && \
-//	  cp /tmp/favicon.svg.png lib/api/avatar.png && \
-//	  cp /tmp/favicon.svg.png assets/avatar.png
+//	  cp /tmp/favicon.svg.png lib/api/avatar.png
 //
 //go:embed avatar.png
 var avatarPNG []byte
