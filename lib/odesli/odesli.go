@@ -83,7 +83,11 @@ func (c *Client) Resolve(ctx context.Context, link string) (*Response, error) {
 	if err != nil {
 		return nil, fmt.Errorf("odesli request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			c.log.Warn("close odesli response body", "error", err)
+		}
+	}()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
