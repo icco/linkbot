@@ -34,10 +34,7 @@ type indexData struct {
 	Nonce     string
 }
 
-// indexCSP is the Content-Security-Policy applied to the landing page.
-//
-// $NONCE is expanded per-request by unrolled/secure so the inline <style>
-// and <script> blocks can run without needing 'unsafe-inline'.
+// indexCSP is the landing-page CSP; $NONCE is expanded per-request by unrolled/secure.
 var indexCSP = strings.Join([]string{
 	"default-src 'self'",
 	"script-src 'self' $NONCE https://unpkg.com",
@@ -57,12 +54,8 @@ var indexCSP = strings.Join([]string{
 // indexReportingEndpoints points the modern Reporting API at reportd.
 var indexReportingEndpoints = `default="` + reportdOrigin + `/reporting/` + reportdService + `"`
 
-// indexSecure is the unrolled/secure middleware applied to HTML routes.
-//
-// ForceSTSHeader is on because linkbot runs behind a TLS-terminating proxy,
-// so the request reaching this process is plain HTTP. Browsers ignore HSTS
-// on HTTP responses anyway, but the header still rides out over the upstream
-// HTTPS hop.
+// indexSecure is the security-headers middleware for HTML routes.
+// ForceSTSHeader: true because linkbot sits behind a TLS-terminating proxy.
 var indexSecure = secure.New(secure.Options{
 	ContentSecurityPolicy: indexCSP,
 	ReferrerPolicy:        "strict-origin-when-cross-origin",
@@ -74,8 +67,7 @@ var indexSecure = secure.New(secure.Options{
 	ForceSTSHeader:        true,
 })
 
-// reportingEndpointsHeader sets the Reporting-Endpoints header for the
-// modern Reporting API; unrolled/secure doesn't expose this directive.
+// reportingEndpointsHeader sets the Reporting-Endpoints header (not handled by unrolled/secure).
 func reportingEndpointsHeader(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Reporting-Endpoints", indexReportingEndpoints)
