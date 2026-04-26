@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>linkbot</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body {
+      max-width: 720px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+      font: 1rem/1.5 system-ui, -apple-system, sans-serif;
+      color: #222;
+    }
+    h1 { margin-bottom: 0.25rem; }
+    h2 { margin-top: 2rem; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    pre {
+      background: #f4f4f5;
+      padding: 0.75rem 1rem;
+      border-radius: 6px;
+      overflow-x: auto;
+      font: 0.95rem/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    p code {
+      background: #f4f4f5;
+      padding: 0.1rem 0.3rem;
+      border-radius: 3px;
+    }
+    .muted { color: #666; }
+    .invite {
+      display: inline-block;
+      padding: 0.55rem 1rem;
+      background: #5865f2;
+      color: #fff;
+      text-decoration: none;
+      border-radius: 6px;
+      font-weight: 600;
+    }
+    .invite:hover { background: #4752c4; }
+  </style>
+</head>
+<body>
+  <h1>linkbot</h1>
+  <p class="muted">A Discord bot and HTTP API that sanitizes URLs.</p>
+
+  <h2>HTTP API</h2>
+  <p>
+    POST a URL and get a sanitized version back. Music links (Spotify, Apple
+    Music, YouTube Music, Tidal, Deezer, etc.) are resolved through
+    <a href="https://odesli.co/">Odesli</a> to a universal
+    <code>song.link</code> page.
+  </p>
+
+  <p><strong>POST <code>/sanitize</code></strong></p>
+<pre><code>curl -X POST https://this-host/sanitize \
+  -H 'Content-Type: application/json' \
+  -d '{"url":"https://open.spotify.com/track/1jJci4qxiYcOHhQR247rEU"}'</code></pre>
+
+  <p>Returns:</p>
+<pre><code>{
+  "url": "https://open.spotify.com/track/1jJci4qxiYcOHhQR247rEU",
+  "sanitized": "https://song.link/s/1jJci4qxiYcOHhQR247rEU",
+  "changed": true
+}</code></pre>
+
+  <p>
+    <strong>GET <code>/healthz</code></strong> &mdash; liveness probe, returns
+    <code>{"status":"ok"}</code>.
+  </p>
+
+  <h2>Discord bot</h2>
+  <p>
+    The bot watches messages, finds music links, and replies with the
+    <code>song.link</code> version so people on different streaming services
+    can still open them. It will not reply if the sanitized URL is already
+    in the source message or in the recent channel history.
+  </p>
+
+  {{if .InviteURL}}
+  <p><a class="invite" href="{{.InviteURL}}">Add linkbot to your server</a></p>
+  <p class="muted">
+    Requires the <em>Send Messages</em> and <em>Read Message History</em>
+    permissions, plus the <em>Message Content</em> privileged intent on the
+    application.
+  </p>
+  {{else}}
+  <p>To invite the bot to your server, build an OAuth2 URL with your application's client ID:</p>
+<pre><code>https://discord.com/oauth2/authorize?client_id=&lt;CLIENT_ID&gt;&permissions=67584&scope=bot</code></pre>
+  <p class="muted">
+    Get the client ID from the
+    <a href="https://discord.com/developers/applications">Discord Developer Portal</a>.
+    Enable the <em>Message Content</em> privileged intent on the application,
+    and grant the <em>Send Messages</em> and <em>Read Message History</em>
+    permissions when inviting the bot.
+  </p>
+  {{end}}
+
+  <h2>Source</h2>
+  <p><a href="https://github.com/icco/linkbot">github.com/icco/linkbot</a></p>
+</body>
+</html>
