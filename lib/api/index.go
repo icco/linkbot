@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/icco/gutil/logging"
+	"github.com/unrolled/secure"
 	"go.uber.org/zap"
 )
 
@@ -30,17 +31,17 @@ var indexTemplate = template.Must(template.New("index").Parse(indexHTML))
 // indexData is the model passed to indexTemplate.
 type indexData struct {
 	InviteURL string
+	Nonce     string
 }
 
 // indexCSP is the Content-Security-Policy applied to the landing page.
 //
-// 'unsafe-inline' is required for the inline <style> block and the inline
-// <script type="module"> that loads web-vitals from unpkg.com; everything
-// else is locked down to 'self' and the reportd ingestion origin.
+// $NONCE is expanded per-request by unrolled/secure so the inline <style>
+// and <script> blocks can run without needing 'unsafe-inline'.
 var indexCSP = strings.Join([]string{
 	"default-src 'self'",
-	"script-src 'self' 'unsafe-inline' https://unpkg.com",
-	"style-src 'self' 'unsafe-inline'",
+	"script-src 'self' $NONCE https://unpkg.com",
+	"style-src 'self' $NONCE",
 	"img-src 'self' data:",
 	"font-src 'self' data:",
 	"connect-src 'self' " + reportdOrigin,
@@ -56,32 +57,42 @@ var indexCSP = strings.Join([]string{
 // indexReportingEndpoints points the modern Reporting API at reportd.
 var indexReportingEndpoints = `default="` + reportdOrigin + `/reporting/` + reportdService + `"`
 
-// setIndexSecurityHeaders applies HTML-only security headers to w.
+// indexSecure is the unrolled/secure middleware applied to HTML routes.
 //
-// These are set per-handler rather than as global middleware so the JSON
-// API responses keep the headers they need (e.g. no CSP locking down API
-// callers) and so frame-ancestors / report-uri / Reporting-Endpoints work,
-// none of which can be set via <meta http-equiv>.
-func setIndexSecurityHeaders(h http.Header) {
-	h.Set("Content-Security-Policy", indexCSP)
-	h.Set("Reporting-Endpoints", indexReportingEndpoints)
-	h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
-	h.Set("X-Content-Type-Options", "nosniff")
-	h.Set("X-Frame-Options", "DENY")
-	h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), interest-cohort=()")
-	h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+// ForceSTSHeader is on because linkbot runs behind a TLS-terminating proxy,
+// so the request reaching this process is plain HTTP. Browsers ignore HSTS
+// on HTTP responses anyway, but the header still rides out over the upstream
+// HTTPS hop.
+var indexSecure = secure.New(secure.Options{
+	ContentSecurityPolicy: indexCSP,
+	ReferrerPolicy:        "strict-origin-when-cross-origin",
+	ContentTypeNosniff:    true,
+	FrameDeny:             true,
+	PermissionsPolicy:     "camera=(), microphone=(), geolocation=(), interest-cohort=()",
+	STSSeconds:            31536000,
+	STSIncludeSubdomains:  true,
+	ForceSTSHeader:        true,
+})
+
+// reportingEndpointsHeader sets the Reporting-Endpoints header for the
+// modern Reporting API; unrolled/secure doesn't expose this directive.
+func reportingEndpointsHeader(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Reporting-Endpoints", indexReportingEndpoints)
+		next.ServeHTTP(w, r)
+	})
 }
 
 // handleIndex renders the landing page; an invite button is added when discordClientID is set.
 func handleIndex(discordClientID string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		data := indexData{}
+		data := indexData{
+			Nonce: secure.CSPNonce(r.Context()),
+		}
 		if discordClientID != "" {
 			data.InviteURL = inviteURL(discordClientID)
 		}
-		h := w.Header()
-		h.Set("Content-Type", "text/html; charset=utf-8")
-		setIndexSecurityHeaders(h)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		if err := indexTemplate.Execute(w, data); err != nil {
 			logging.FromContext(r.Context()).Errorw("render index", zap.Error(err))
 		}

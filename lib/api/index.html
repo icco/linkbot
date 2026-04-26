@@ -7,7 +7,7 @@
   <meta name="description" content="A Discord bot that strips tracking junk, unlocks paywalled articles, and turns music links into universal song.link URLs.">
   <meta name="referrer" content="strict-origin-when-cross-origin">
   <meta name="color-scheme" content="light dark">
-  <style>
+  <style nonce="{{.Nonce}}">
     :root {
       --fg: #1a1a1a;
       --muted: #5d5d63;
@@ -121,7 +121,7 @@
     Open source on <a href="https://github.com/icco/linkbot">GitHub</a>.
   </footer>
 
-  <script type="module">
+  <script type="module" nonce="{{.Nonce}}">
     import { onCLS, onINP, onLCP, onFCP, onTTFB }
       from 'https://unpkg.com/web-vitals@5?module';
 
