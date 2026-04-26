@@ -2,6 +2,7 @@ package discord
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -159,5 +160,60 @@ func TestOnReady_Idempotent(t *testing.T) {
 	case <-b.ready:
 	case <-time.After(time.Second):
 		t.Fatalf("ready channel was not closed by onReady")
+	}
+}
+
+// TestSanitizeCommandJSONShape pins down the on-the-wire JSON we send to
+// Discord when registering /sanitize. If discordgo or our local schema
+// types ever drift, this test fails before we ship a broken slash command.
+func TestSanitizeCommandJSONShape(t *testing.T) {
+	t.Parallel()
+
+	cmd := sanitizeCommand()
+	out, err := json.Marshal([]applicationCommand{cmd})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	var got []map[string]any
+	if err := json.Unmarshal(out, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("len(commands) = %d, want 1", len(got))
+	}
+	c := got[0]
+	if c["name"] != sanitizeCommandName {
+		t.Errorf("command name = %v, want %q", c["name"], sanitizeCommandName)
+	}
+	if c["description"] != "Sanitize a URL" {
+		t.Errorf("command description = %v", c["description"])
+	}
+	if c["type"] != float64(1) {
+		t.Errorf("command type = %v, want 1", c["type"])
+	}
+
+	options, ok := c["options"].([]any)
+	if !ok {
+		t.Fatalf("options is not an array: %T", c["options"])
+	}
+	if len(options) != 1 {
+		t.Fatalf("len(options) = %d, want 1", len(options))
+	}
+	opt, ok := options[0].(map[string]any)
+	if !ok {
+		t.Fatalf("option[0] not an object: %T", options[0])
+	}
+	if opt["name"] != "url" {
+		t.Errorf("option name = %v, want \"url\"", opt["name"])
+	}
+	if opt["description"] != "URL to sanitize" {
+		t.Errorf("option description = %v", opt["description"])
+	}
+	if opt["type"] != float64(3) {
+		t.Errorf("option type = %v, want 3 (STRING)", opt["type"])
+	}
+	if opt["required"] != true {
+		t.Errorf("option required = %v, want true", opt["required"])
 	}
 }

@@ -1,17 +1,33 @@
 // Package discord wires the linkbot to Discord through bwmarrin/discordgo.
+//
+// Two surfaces are supported side by side:
+//   - the original message listener that reads channel messages and replies
+//     with a sanitized URL when one is found;
+//   - a /sanitize global slash command, registered via the OAuth2
+//     client-credentials grant in [github.com/icco/linkbot/lib/discordoauth]
+//     and serviced through an InteractionCreate handler.
+//
+// The bot token is still required for the gateway connection — Discord
+// does not allow client-credentials to authorize a gateway, so OAuth2
+// only powers REST calls (slash command registration and similar).
 package discord
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/gorilla/websocket"
+	"github.com/icco/linkbot/lib/discordoauth"
 	"github.com/icco/linkbot/lib/logctx"
 	"github.com/icco/linkbot/lib/sanitize"
 )
@@ -31,10 +47,68 @@ const readyTimeout = 10 * time.Second
 // errReadyTimeout signals that READY did not arrive within readyTimeout.
 var errReadyTimeout = errors.New("discord ready event not received before timeout")
 
-// Bot listens for messages on Discord and replies with sanitized URLs.
+// discordRESTBaseURL is the Discord REST API root used for slash command
+// registration. v10 is the current GA version; bump when Discord deprecates.
+const discordRESTBaseURL = "https://discord.com/api/v10"
+
+// userAgent is sent on every outbound REST request originating from this
+// package (slash command registration today).
+const userAgent = "linkbot/0.1 (+https://github.com/icco/linkbot)"
+
+// sanitizeCommandName is the global slash command name registered with
+// Discord. Kept as a package-level const so it can be referenced from both
+// RegisterCommands and the interaction handler without drift.
+const sanitizeCommandName = "sanitize"
+
+// errorBodyLimit caps how many bytes of an error response body we surface
+// in wrapped errors when Discord returns a non-2xx for command
+// registration.
+const errorBodyLimit = 512
+
+// applicationCommandOption mirrors the subset of Discord's
+// application-command-option schema we send when registering /sanitize.
+// Type 3 = STRING per Discord's command option type table.
+type applicationCommandOption struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Type        int    `json:"type"`
+	Required    bool   `json:"required,omitempty"`
+}
+
+// applicationCommand mirrors the subset of Discord's application-command
+// schema we send when registering /sanitize. Type 1 = CHAT_INPUT (slash).
+type applicationCommand struct {
+	Name        string                     `json:"name"`
+	Description string                     `json:"description"`
+	Type        int                        `json:"type"`
+	Options     []applicationCommandOption `json:"options,omitempty"`
+}
+
+// sanitizeCommand returns the application command definition we register
+// with Discord. Returning a fresh value avoids accidental cross-test
+// aliasing in callers that mutate the slice.
+func sanitizeCommand() applicationCommand {
+	return applicationCommand{
+		Name:        sanitizeCommandName,
+		Description: "Sanitize a URL",
+		Type:        1,
+		Options: []applicationCommandOption{
+			{
+				Name:        "url",
+				Description: "URL to sanitize",
+				Type:        3,
+				Required:    true,
+			},
+		},
+	}
+}
+
+// Bot listens for messages on Discord and replies with sanitized URLs. It
+// also serves the /sanitize slash command when registered.
 type Bot struct {
 	session   *discordgo.Session
 	san       *sanitize.Sanitizer
+	http      *http.Client
 	ready     chan struct{}
 	readyOnce sync.Once
 }
@@ -53,10 +127,12 @@ func New(token string, san *sanitize.Sanitizer, base *slog.Logger) (*Bot, error)
 	b := &Bot{
 		session: s,
 		san:     san,
+		http:    &http.Client{Timeout: 15 * time.Second},
 		ready:   make(chan struct{}),
 	}
 	s.AddHandler(b.onReady)
 	s.AddHandler(b.handleMessage(base))
+	s.AddHandler(b.handleInteraction(base))
 	return b, nil
 }
 
@@ -145,6 +221,75 @@ func intentHint(err error, appID string) string {
 	return "gateway rejected privileged intent(s) (close 4014); enable Message Content Intent for your application at https://discord.com/developers/applications"
 }
 
+// RegisterCommands PUT-overwrites the global application command set so
+// that linkbot's /sanitize slash command is available in every guild that
+// has installed the application.
+//
+// applicationID is passed explicitly (rather than read from the session)
+// to keep the dependency direction clean: command registration must work
+// even if the gateway has not yet finished its READY handshake. main
+// supplies cfg.DiscordClientID which equals the application ID for bot
+// applications.
+//
+// The bearer token comes from the OAuth2 client-credentials grant via the
+// supplied [discordoauth.Client]. The bot token is intentionally not used
+// here; Discord accepts both for application command endpoints, but using
+// the OAuth flow exercises the documented modern path.
+func (b *Bot) RegisterCommands(ctx context.Context, oauth *discordoauth.Client, applicationID string) error {
+	if applicationID == "" {
+		return fmt.Errorf("register commands: empty applicationID")
+	}
+	if oauth == nil {
+		return fmt.Errorf("register commands: nil oauth client")
+	}
+	log := logctx.From(ctx)
+
+	token, err := oauth.Token(ctx)
+	if err != nil {
+		return fmt.Errorf("register commands: oauth token: %w", err)
+	}
+
+	body, err := json.Marshal([]applicationCommand{sanitizeCommand()})
+	if err != nil {
+		return fmt.Errorf("register commands: marshal body: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/applications/%s/commands", discordRESTBaseURL, applicationID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, url, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("register commands: build request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", userAgent)
+
+	resp, err := b.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("register commands: request: %w", err)
+	}
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			log.Warn("close register commands response body", "error", cerr)
+		}
+	}()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("register commands: read body: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("register commands: discord %d: %s",
+			resp.StatusCode, truncate(string(respBody), errorBodyLimit))
+	}
+	log.Info("discord slash commands registered",
+		"command", sanitizeCommandName,
+		"application_id", applicationID,
+		"status", resp.StatusCode,
+	)
+	return nil
+}
+
 // handleMessage returns the discordgo MessageCreate handler. It closes over
 // the base logger so each event can derive a per-message child logger
 // (channel/message/author IDs) and stash it on a fresh, time-bounded context.
@@ -176,6 +321,109 @@ func (b *Bot) handleMessage(base *slog.Logger) func(*discordgo.Session, *discord
 		if _, err := s.ChannelMessageSendReply(m.ChannelID, reply, m.Reference()); err != nil {
 			logctx.From(ctx).Error("discord reply failed", "error", err)
 		}
+	}
+}
+
+// handleInteraction returns the discordgo InteractionCreate handler. Only
+// application-command interactions for /sanitize are serviced; other
+// interaction types fall through silently so future commands or component
+// callbacks can be layered on without surprising existing users.
+func (b *Bot) handleInteraction(base *slog.Logger) func(*discordgo.Session, *discordgo.InteractionCreate) {
+	return func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+		if i.Type != discordgo.InteractionApplicationCommand {
+			return
+		}
+		data := i.ApplicationCommandData()
+		if data.Name != sanitizeCommandName {
+			return
+		}
+
+		log := base.With(
+			"interaction_id", i.ID,
+			"command", data.Name,
+		)
+		if i.ChannelID != "" {
+			log = log.With("channel_id", i.ChannelID)
+		}
+		if i.GuildID != "" {
+			log = log.With("guild_id", i.GuildID)
+		}
+		if user := interactionUser(i); user != nil {
+			log = log.With("user_id", user.ID)
+		}
+
+		ctx, cancel := context.WithTimeout(logctx.New(context.Background(), log), 20*time.Second)
+		defer cancel()
+
+		raw := optionString(data.Options, "url")
+		if raw == "" {
+			respondInteractionError(s, i, log, "missing required `url` option")
+			return
+		}
+
+		clean, err := b.san.URL(ctx, raw)
+		if err != nil {
+			log.Error("interaction sanitize failed", "url", raw, "error", err)
+			respondInteractionError(s, i, log, "could not sanitize that URL")
+			return
+		}
+
+		var content string
+		if sanitize.Changed(raw, clean) {
+			content = clean
+		} else {
+			content = "No sanitization needed: " + raw
+		}
+
+		if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: content,
+			},
+		}); err != nil {
+			log.Error("interaction respond failed", "error", err)
+		}
+	}
+}
+
+// interactionUser returns the user who triggered the interaction. Discord
+// puts the user on Member.User for guild interactions and on User for DMs;
+// the helper hides that branching from callers.
+func interactionUser(i *discordgo.InteractionCreate) *discordgo.User {
+	if i.Member != nil && i.Member.User != nil {
+		return i.Member.User
+	}
+	return i.User
+}
+
+// optionString returns the string value of the named option, or "" when
+// the option is absent or not a string. Discord guarantees the type but
+// we still defensively check before calling StringValue.
+func optionString(opts []*discordgo.ApplicationCommandInteractionDataOption, name string) string {
+	for _, o := range opts {
+		if o == nil {
+			continue
+		}
+		if o.Name == name && o.Type == discordgo.ApplicationCommandOptionString {
+			return o.StringValue()
+		}
+	}
+	return ""
+}
+
+// respondInteractionError sends an ephemeral error message back to the
+// invoking user. The internal error is already logged by the caller; we
+// only surface a short, user-safe summary to avoid leaking internals.
+func respondInteractionError(s *discordgo.Session, i *discordgo.InteractionCreate, log *slog.Logger, summary string) {
+	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content: summary,
+			Flags:   discordgo.MessageFlagsEphemeral,
+		},
+	})
+	if err != nil {
+		log.Error("interaction error respond failed", "error", err)
 	}
 }
 
@@ -226,4 +474,14 @@ func recentlyPosted(s *discordgo.Session, channelID, beforeID, target string) (b
 		}
 	}
 	return false, nil
+}
+
+// truncate clips s to at most n bytes, appending an ellipsis when
+// truncation occurs. Used to keep error bodies bounded when Discord
+// returns a non-2xx for command registration.
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
 }

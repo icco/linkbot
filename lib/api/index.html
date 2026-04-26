@@ -76,6 +76,11 @@
     can still open them. It will not reply if the sanitized URL is already
     in the source message or in the recent channel history.
   </p>
+  <p class="muted">
+    When <code>DISCORD_CLIENT_ID</code> and <code>DISCORD_CLIENT_SECRET</code>
+    are both set, linkbot also registers a global <code>/sanitize</code>
+    slash command at startup so users can sanitize a URL on demand.
+  </p>
 
   {{if .InviteURL}}
   <p><a class="invite" href="{{.InviteURL}}">Add linkbot to your server</a></p>

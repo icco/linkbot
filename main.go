@@ -15,6 +15,7 @@ import (
 	"github.com/icco/linkbot/lib/api"
 	"github.com/icco/linkbot/lib/config"
 	"github.com/icco/linkbot/lib/discord"
+	"github.com/icco/linkbot/lib/discordoauth"
 	"github.com/icco/linkbot/lib/logctx"
 	"github.com/icco/linkbot/lib/odesli"
 	"github.com/icco/linkbot/lib/sanitize"
@@ -69,6 +70,16 @@ func main() {
 			os.Exit(1)
 		}
 		bot = b
+
+		switch {
+		case cfg.DiscordClientID != "" && cfg.DiscordClientSecret != "":
+			oauthClient := discordoauth.New(cfg.DiscordClientID, cfg.DiscordClientSecret, log)
+			if err := bot.RegisterCommands(ctx, oauthClient, cfg.DiscordClientID); err != nil {
+				log.Warn("discord slash command registration failed; bot still running", "error", err)
+			}
+		case cfg.DiscordClientID != "" && cfg.DiscordClientSecret == "":
+			log.Warn("DISCORD_CLIENT_ID set without DISCORD_CLIENT_SECRET; skipping slash command registration")
+		}
 	} else {
 		log.Warn("DISCORD_TOKEN not set; running API only")
 	}

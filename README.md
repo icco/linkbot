@@ -48,12 +48,13 @@ curl -sS -X POST http://localhost:8080/sanitize \
 
 ## Environment variables
 
-| Variable            | Required | Default   | Description                                                                |
-|---------------------|----------|-----------|----------------------------------------------------------------------------|
-| `DISCORD_TOKEN`     | no       | _(empty)_ | Discord bot token. If unset, only the HTTP API runs.                       |
-| `DISCORD_CLIENT_ID` | no       | _(empty)_ | Discord application client ID; enables the invite link on the landing page. |
-| `PORT`              | no       | `8080`    | HTTP listen port.                                                          |
-| `ODESLI_API_KEY`    | no       | _(empty)_ | Odesli API key. The public endpoint works without one but is rate limited. |
+| Variable                | Required | Default   | Description                                                                                                                       |
+|-------------------------|----------|-----------|-----------------------------------------------------------------------------------------------------------------------------------|
+| `DISCORD_TOKEN`         | no       | _(empty)_ | Discord bot token. Required for the gateway connection — Discord does not allow OAuth2 client credentials to authorize a gateway. |
+| `DISCORD_CLIENT_ID`     | no       | _(empty)_ | Discord application client ID; enables the invite link on the landing page and identifies the app for slash command registration. |
+| `DISCORD_CLIENT_SECRET` | no       | _(empty)_ | Discord application OAuth2 client secret. When set together with `DISCORD_CLIENT_ID`, linkbot registers a `/sanitize` slash command at startup. |
+| `PORT`                  | no       | `8080`    | HTTP listen port.                                                                                                                 |
+| `ODESLI_API_KEY`        | no       | _(empty)_ | Odesli API key. The public endpoint works without one but is rate limited.                                                        |
 
 ## Running
 
@@ -74,6 +75,10 @@ docker run --rm -p 8080:8080 -e DISCORD_TOKEN=... linkbot
 3. Invite the bot with the `bot` scope plus the `Send Messages` and `Read Message History`
    permissions.
 4. Set `DISCORD_TOKEN` and run linkbot.
+5. Optional: set `DISCORD_CLIENT_ID` and `DISCORD_CLIENT_SECRET` to enable the `/sanitize`
+   slash command. Discord's client-credentials grant implicitly authorizes the
+   `applications.commands.update` scope used to register application commands; the bot token
+   is still required for the gateway connection alongside it.
 
 ## Contributing
 
