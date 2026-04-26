@@ -30,6 +30,7 @@ jobs:
             ci
             chore
             revert
+            style
           requireScope: false
           subjectPattern: ^[a-z].+[^.]$
           subjectPatternError: |
