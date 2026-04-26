@@ -86,6 +86,13 @@ docker run --rm -p 8080:8080 -e DISCORD_TOKEN=... linkbot
 3. Invite the bot with the `bot` scope and the `Send Messages` and `Read Message History` permissions.
 4. Set `DISCORD_TOKEN` and run linkbot.
 
+## Contributing
+
+All work happens in feature branches and lands via PR. PR titles and any
+commits that hit `main` must follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/).
+See [`AGENTS.md`](./AGENTS.md) for the full set of conventions used by both
+human and AI contributors.
+
 ## Roadmap
 
 - Strip tracking parameters (`utm_*`, `fbclid`, `gclid`, `igshid`, …).
