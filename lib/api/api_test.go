@@ -97,10 +97,8 @@ func TestMetricsEndpoint(t *testing.T) {
 	}
 }
 
-// TestIndexSecurityHeaders asserts the landing page sets the expected
-// security headers, that the per-request CSP nonce is plumbed into the
-// rendered <script>/<style> tags, and that the JSON API routes don't
-// pick up the HTML-only headers.
+// TestIndexSecurityHeaders asserts the landing page's security headers
+// and CSP nonce, and that JSON API routes don't inherit the HTML-only headers.
 func TestIndexSecurityHeaders(t *testing.T) {
 	h := api.Router(api.Options{
 		Sanitizer:       stubSanitizer{},
