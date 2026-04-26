@@ -18,7 +18,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/icco/linkbot/lib/logctx"
+	"github.com/icco/gutil/logging"
+	"go.uber.org/zap"
 )
 
 const (
@@ -102,7 +103,7 @@ func (c *cleaner) clean(ctx context.Context, u *url.URL) (string, error) {
 		return u.String(), nil
 	}
 	if c.hop >= c.maxHops {
-		logctx.From(ctx).Warn("careen: hop cap reached", "url", u.String(), "max_hops", c.maxHops)
+		logging.FromContext(ctx).Warnw("careen: hop cap reached", "url", u.String(), "max_hops", c.maxHops)
 		return u.String(), nil
 	}
 	c.hop++
@@ -179,10 +180,10 @@ var appleNewsRE = regexp.MustCompile(`redirectToUrlAfterTimeout\("([^"]+)"`)
 // recurses. On any failure it returns u untouched.
 func (c *cleaner) appleNews() strategy {
 	return func(ctx context.Context, u *url.URL) (string, error) {
-		log := logctx.From(ctx)
+		log := logging.FromContext(ctx)
 		body, err := c.fetch(ctx, u)
 		if err != nil {
-			log.Warn("careen apple.news: fetch failed", "url", u.String(), "error", err)
+			log.Warnw("careen apple.news: fetch failed", "url", u.String(), zap.Error(err))
 			return u.String(), nil
 		}
 		m := appleNewsRE.FindStringSubmatch(body)
@@ -191,7 +192,7 @@ func (c *cleaner) appleNews() strategy {
 		}
 		next, err := url.Parse(m[1])
 		if err != nil {
-			log.Warn("careen apple.news: bad redirect", "url", u.String(), "redirect", m[1], "error", err)
+			log.Warnw("careen apple.news: bad redirect", "url", u.String(), "redirect", m[1], zap.Error(err))
 			return u.String(), nil
 		}
 		return c.clean(ctx, next)
@@ -202,10 +203,10 @@ func (c *cleaner) appleNews() strategy {
 // Location header. Non-3xx responses leave u untouched.
 func (c *cleaner) followRedirect() strategy {
 	return func(ctx context.Context, u *url.URL) (string, error) {
-		log := logctx.From(ctx)
+		log := logging.FromContext(ctx)
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 		if err != nil {
-			log.Warn("careen follow: build request", "url", u.String(), "error", err)
+			log.Warnw("careen follow: build request", "url", u.String(), zap.Error(err))
 			return u.String(), nil
 		}
 		req.Header.Set("User-Agent", userAgent)
@@ -216,16 +217,16 @@ func (c *cleaner) followRedirect() strategy {
 		}
 		resp, err := nr.Do(req)
 		if err != nil {
-			log.Warn("careen follow: request failed", "url", u.String(), "error", err)
+			log.Warnw("careen follow: request failed", "url", u.String(), zap.Error(err))
 			return u.String(), nil
 		}
 		defer func() {
 			if err := resp.Body.Close(); err != nil {
-				log.Warn("careen follow: close body", "error", err)
+				log.Warnw("careen follow: close body", zap.Error(err))
 			}
 		}()
 		if _, err := io.Copy(io.Discard, resp.Body); err != nil && !errors.Is(err, io.EOF) {
-			log.Debug("careen follow: drain body", "error", err)
+			log.Debugw("careen follow: drain body", zap.Error(err))
 		}
 
 		if resp.StatusCode < http.StatusMultipleChoices || resp.StatusCode >= http.StatusBadRequest {
@@ -237,7 +238,7 @@ func (c *cleaner) followRedirect() strategy {
 		}
 		next, err := url.Parse(loc)
 		if err != nil {
-			log.Warn("careen follow: bad Location", "url", u.String(), "location", loc, "error", err)
+			log.Warnw("careen follow: bad Location", "url", u.String(), "location", loc, zap.Error(err))
 			return u.String(), nil
 		}
 		if !next.IsAbs() {
@@ -261,7 +262,7 @@ func (c *cleaner) fetch(ctx context.Context, u *url.URL) (string, error) {
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			logctx.From(ctx).Warn("careen fetch: close body", "error", err)
+			logging.FromContext(ctx).Warnw("careen fetch: close body", zap.Error(err))
 		}
 	}()
 	if resp.StatusCode != http.StatusOK {
