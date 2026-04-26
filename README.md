@@ -9,8 +9,10 @@ What "sanitize" means today:
 - **Tracking params** (`utm_*`, `fbclid`, `gclid`, …) are stripped via host-aware rules ported
   from [timball/Careen](https://github.com/timball/Careen).
 - **Paywalled hosts** (WSJ, FT, Bloomberg, Washington Post, The Atlantic, The New Yorker, …)
-  are rewritten through an [archive.ph](https://archive.ph/) prefix so readers without a
-  subscription can still open the link. Already-archived URLs and trusted workspace hosts
+  are rewritten through a randomly chosen [archive.today](https://archive.today/) mirror
+  (`archive.fo`, `archive.is`, `archive.li`, `archive.md`, `archive.ph`, `archive.today`)
+  so readers without a subscription can still open the link, and so we don't pile load
+  onto a single mirror. Already-archived URLs and trusted workspace hosts
   (`admin.cloud.microsoft`) pass through untouched.
 
 Stack: Go, [chi](https://github.com/go-chi/chi), [discordgo](https://github.com/bwmarrin/discordgo),

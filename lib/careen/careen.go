@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -23,22 +24,36 @@ const (
 	userAgent      = "linkbot/0.1 (+https://github.com/icco/linkbot)"
 	defaultMaxHops = 3
 	bodyReadLimit  = 1 << 20
-
-	// archivePrefix is the Memento-protocol mirror prefix used to
-	// bypass paywalled hosts. The mirror serves <prefix><original-url>.
-	archivePrefix = "https://archive.ph/"
 )
 
-// archiveMirrors are hosts treated as already-archived: clean returns
-// such URLs untouched so we never double-wrap. All entries resolve to
-// the same Memento service.
-var archiveMirrors = map[string]struct{}{
-	"archive.ph":    {},
-	"archive.today": {},
-	"archive.is":    {},
-	"archive.li":    {},
-	"archive.fo":    {},
-	"archive.md":    {},
+// archiveMirrors are the Memento-protocol mirrors used to bypass
+// paywallHosts; one is picked at random per archive routing to spread
+// load. URLs whose host is in this list are also treated as
+// already-archived and returned untouched to avoid double-wrapping.
+// All entries resolve to the same Memento service.
+var archiveMirrors = []string{
+	"archive.fo",
+	"archive.is",
+	"archive.li",
+	"archive.md",
+	"archive.ph",
+	"archive.today",
+}
+
+// archiveMirrorSet is a lookup-friendly view of archiveMirrors used by
+// clean to detect URLs that are already archived.
+var archiveMirrorSet = func() map[string]struct{} {
+	m := make(map[string]struct{}, len(archiveMirrors))
+	for _, h := range archiveMirrors {
+		m[h] = struct{}{}
+	}
+	return m
+}()
+
+// pickArchiveMirror returns a mirror host from archiveMirrors. It is a
+// var so tests can pin a deterministic mirror.
+var pickArchiveMirror = func() string {
+	return archiveMirrors[rand.IntN(len(archiveMirrors))]
 }
 
 // paywallHosts triggers archive routing in clean. NYT is intentionally
@@ -136,7 +151,7 @@ func (c *cleaner) clean(ctx context.Context, u *url.URL) (string, error) {
 		return u.String(), nil
 	}
 	host := strings.ToLower(u.Host)
-	if _, archived := archiveMirrors[host]; archived {
+	if _, archived := archiveMirrorSet[host]; archived {
 		return u.String(), nil
 	}
 	if c.hop >= c.maxHops {
@@ -156,7 +171,7 @@ func (c *cleaner) clean(ctx context.Context, u *url.URL) (string, error) {
 	if noArchive || !isPaywalled(host) {
 		return cleaned, nil
 	}
-	return archivePrefix + cleaned, nil
+	return "https://" + pickArchiveMirror() + "/" + cleaned, nil
 }
 
 // dispatch returns the strategy and noArchive flag for host. Default
