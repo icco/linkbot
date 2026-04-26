@@ -2,21 +2,16 @@
 //
 // Surfaces:
 //   - a message listener that replies with sanitized URLs;
-//   - a /sanitize global slash command registered via OAuth2
-//     client-credentials and served from an InteractionCreate handler.
+//   - a /sanitize global slash command served via InteractionCreate.
 //
-// The bot token still authenticates the gateway; OAuth2 only signs REST
-// calls (slash command registration today).
+// Both surfaces authenticate with the bot token; no extra OAuth2 dance is
+// required for command registration.
 package discord
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -45,17 +40,8 @@ const readyTimeout = 10 * time.Second
 // errReadyTimeout signals that READY did not arrive in time.
 var errReadyTimeout = errors.New("discord ready event not received before timeout")
 
-// discordRESTBaseURL is Discord's v10 REST API root.
-const discordRESTBaseURL = "https://discord.com/api/v10"
-
-// userAgent is sent on every outbound REST request.
-const userAgent = "linkbot/0.1 (+https://github.com/icco/linkbot)"
-
 // sanitizeCommandName is the global slash command name.
 const sanitizeCommandName = "sanitize"
-
-// errorBodyLimit caps how many bytes of a Discord error body we surface.
-const errorBodyLimit = 512
 
 // meterName is the OTel meter scope.
 const meterName = "linkbot/discord"
@@ -89,35 +75,17 @@ func recordAction(ctx context.Context, action string) {
 	messagesCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("action", action)))
 }
 
-// applicationCommandOption is Discord's command-option schema subset.
-// Type 3 = STRING.
-type applicationCommandOption struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Type        int    `json:"type"`
-	Required    bool   `json:"required,omitempty"`
-}
-
-// applicationCommand is Discord's command schema subset.
-// Type 1 = CHAT_INPUT.
-type applicationCommand struct {
-	Name        string                     `json:"name"`
-	Description string                     `json:"description"`
-	Type        int                        `json:"type"`
-	Options     []applicationCommandOption `json:"options,omitempty"`
-}
-
 // sanitizeCommand returns the /sanitize command definition.
-func sanitizeCommand() applicationCommand {
-	return applicationCommand{
+func sanitizeCommand() *discordgo.ApplicationCommand {
+	return &discordgo.ApplicationCommand{
 		Name:        sanitizeCommandName,
+		Type:        discordgo.ChatApplicationCommand,
 		Description: "Sanitize a URL",
-		Type:        1,
-		Options: []applicationCommandOption{
+		Options: []*discordgo.ApplicationCommandOption{
 			{
 				Name:        "url",
 				Description: "URL to sanitize",
-				Type:        3,
+				Type:        discordgo.ApplicationCommandOptionString,
 				Required:    true,
 			},
 		},
@@ -234,55 +202,19 @@ func intentHint(err error, appID string) string {
 	return "gateway rejected privileged intent(s) (close 4014); enable Message Content Intent for your application at https://discord.com/developers/applications"
 }
 
-// RegisterCommands PUT-overwrites the global slash commands with
-// /sanitize. httpClient should attach OAuth2 (e.g. from
-// [golang.org/x/oauth2/clientcredentials.Config.Client]); applicationID
-// is the bot's app/client ID.
-func (b *Bot) RegisterCommands(ctx context.Context, httpClient *http.Client, applicationID string) error {
+// RegisterCommands bulk-overwrites the global slash commands with /sanitize.
+// applicationID is the bot's app/client ID; pass cfg.DiscordClientID.
+func (b *Bot) RegisterCommands(ctx context.Context, applicationID string) error {
 	if applicationID == "" {
 		return fmt.Errorf("register commands: empty applicationID")
 	}
-	if httpClient == nil {
-		return fmt.Errorf("register commands: nil http client")
+	cmds := []*discordgo.ApplicationCommand{sanitizeCommand()}
+	if _, err := b.session.ApplicationCommandBulkOverwrite(applicationID, "", cmds, discordgo.WithContext(ctx)); err != nil {
+		return fmt.Errorf("register commands: %w", err)
 	}
-	log := logging.FromContext(ctx)
-
-	body, err := json.Marshal([]applicationCommand{sanitizeCommand()})
-	if err != nil {
-		return fmt.Errorf("register commands: marshal body: %w", err)
-	}
-
-	url := fmt.Sprintf("%s/applications/%s/commands", discordRESTBaseURL, applicationID)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, url, bytes.NewReader(body))
-	if err != nil {
-		return fmt.Errorf("register commands: build request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", userAgent)
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("register commands: request: %w", err)
-	}
-	defer func() {
-		if cerr := resp.Body.Close(); cerr != nil {
-			log.Warnw("close register commands response body", zap.Error(cerr))
-		}
-	}()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("register commands: read body: %w", err)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("register commands: discord %d: %s",
-			resp.StatusCode, truncate(string(respBody), errorBodyLimit))
-	}
-	log.Infow("discord slash commands registered",
+	logging.FromContext(ctx).Infow("discord slash commands registered",
 		"command", sanitizeCommandName,
 		"application_id", applicationID,
-		"status", resp.StatusCode,
 	)
 	return nil
 }
@@ -476,12 +408,4 @@ func recentlyPosted(s *discordgo.Session, channelID, beforeID, target string) (b
 		}
 	}
 	return false, nil
-}
-
-// truncate clips s to n bytes, appending "..." if it had to cut.
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "..."
 }

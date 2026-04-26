@@ -20,10 +20,6 @@ type Config struct {
 	// invite link and slash command registration.
 	DiscordClientID string
 
-	// DiscordClientSecret pairs with DiscordClientID to register the
-	// /sanitize slash command via OAuth2 client credentials.
-	DiscordClientSecret string
-
 	// Port is the HTTP API listen port.
 	Port int
 
@@ -34,14 +30,9 @@ type Config struct {
 // Load reads configuration from environment variables.
 func Load() (*Config, error) {
 	c := &Config{
-		DiscordToken:        os.Getenv("DISCORD_TOKEN"),
-		DiscordClientID:     os.Getenv("DISCORD_CLIENT_ID"),
-		DiscordClientSecret: os.Getenv("DISCORD_CLIENT_SECRET"),
-		OdesliAPIKey:        os.Getenv("ODESLI_API_KEY"),
-	}
-
-	if c.DiscordClientSecret != "" && c.DiscordClientID == "" {
-		return nil, errors.New("DISCORD_CLIENT_SECRET set without DISCORD_CLIENT_ID; both must be set as a pair")
+		DiscordToken:    os.Getenv("DISCORD_TOKEN"),
+		DiscordClientID: os.Getenv("DISCORD_CLIENT_ID"),
+		OdesliAPIKey:    os.Getenv("ODESLI_API_KEY"),
 	}
 
 	port := os.Getenv("PORT")

@@ -6,24 +6,20 @@ import (
 )
 
 func TestLoad(t *testing.T) {
-	// All env vars touched by Load() are cleared up front so the tests
-	// run in a deterministic environment regardless of where they execute.
 	envKeys := []string{
 		"DISCORD_TOKEN",
 		"DISCORD_CLIENT_ID",
-		"DISCORD_CLIENT_SECRET",
 		"ODESLI_API_KEY",
 		"PORT",
 	}
 
 	type want struct {
-		err          bool
-		errSubstr    string
-		token        string
-		clientID     string
-		clientSecret string
-		odesliKey    string
-		port         int
+		err       bool
+		errSubstr string
+		token     string
+		clientID  string
+		odesliKey string
+		port      int
 	}
 
 	cases := []struct {
@@ -37,29 +33,7 @@ func TestLoad(t *testing.T) {
 			want: want{port: 8080},
 		},
 		{
-			name: "valid client id and secret pair",
-			env: map[string]string{
-				"DISCORD_CLIENT_ID":     "123",
-				"DISCORD_CLIENT_SECRET": "shh",
-			},
-			want: want{
-				clientID:     "123",
-				clientSecret: "shh",
-				port:         8080,
-			},
-		},
-		{
-			name: "secret without id errors",
-			env: map[string]string{
-				"DISCORD_CLIENT_SECRET": "shh",
-			},
-			want: want{
-				err:       true,
-				errSubstr: "DISCORD_CLIENT_SECRET",
-			},
-		},
-		{
-			name: "id without secret is permitted",
+			name: "client id only",
 			env: map[string]string{
 				"DISCORD_CLIENT_ID": "123",
 			},
@@ -98,18 +72,16 @@ func TestLoad(t *testing.T) {
 		{
 			name: "all fields populated",
 			env: map[string]string{
-				"DISCORD_TOKEN":         "tok",
-				"DISCORD_CLIENT_ID":     "123",
-				"DISCORD_CLIENT_SECRET": "shh",
-				"ODESLI_API_KEY":        "ok",
-				"PORT":                  "8081",
+				"DISCORD_TOKEN":     "tok",
+				"DISCORD_CLIENT_ID": "123",
+				"ODESLI_API_KEY":    "ok",
+				"PORT":              "8081",
 			},
 			want: want{
-				token:        "tok",
-				clientID:     "123",
-				clientSecret: "shh",
-				odesliKey:    "ok",
-				port:         8081,
+				token:     "tok",
+				clientID:  "123",
+				odesliKey: "ok",
+				port:      8081,
 			},
 		},
 	}
@@ -141,9 +113,6 @@ func TestLoad(t *testing.T) {
 			}
 			if cfg.DiscordClientID != tc.want.clientID {
 				t.Errorf("DiscordClientID = %q, want %q", cfg.DiscordClientID, tc.want.clientID)
-			}
-			if cfg.DiscordClientSecret != tc.want.clientSecret {
-				t.Errorf("DiscordClientSecret mismatch")
 			}
 			if cfg.OdesliAPIKey != tc.want.odesliKey {
 				t.Errorf("OdesliAPIKey = %q, want %q", cfg.OdesliAPIKey, tc.want.odesliKey)

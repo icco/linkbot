@@ -24,12 +24,7 @@ import (
 	"github.com/icco/linkbot/lib/discord"
 	"github.com/icco/linkbot/lib/odesli"
 	"github.com/icco/linkbot/lib/sanitize"
-	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/clientcredentials"
 )
-
-// discordOAuthEndpoint is Discord's v10 OAuth2 token endpoint.
-const discordOAuthEndpoint = "https://discord.com/api/v10/oauth2/token"
 
 // main wires dependencies and blocks until SIGINT/SIGTERM.
 func main() {
@@ -108,21 +103,12 @@ func main() {
 		}
 		bot = b
 
-		switch {
-		case cfg.DiscordClientID != "" && cfg.DiscordClientSecret != "":
-			oauthCfg := &clientcredentials.Config{
-				ClientID:     cfg.DiscordClientID,
-				ClientSecret: cfg.DiscordClientSecret,
-				TokenURL:     discordOAuthEndpoint,
-				Scopes:       []string{"applications.commands.update"},
-				AuthStyle:    oauth2.AuthStyleInHeader,
-			}
-			oauthHTTP := oauthCfg.Client(ctx)
-			if err := bot.RegisterCommands(ctx, oauthHTTP, cfg.DiscordClientID); err != nil {
+		if cfg.DiscordClientID != "" {
+			if err := bot.RegisterCommands(ctx, cfg.DiscordClientID); err != nil {
 				log.Warnw("discord slash command registration failed; bot still running", zap.Error(err))
 			}
-		case cfg.DiscordClientID != "" && cfg.DiscordClientSecret == "":
-			log.Warn("DISCORD_CLIENT_ID set without DISCORD_CLIENT_SECRET; skipping slash command registration")
+		} else {
+			log.Warn("DISCORD_CLIENT_ID not set; skipping slash command registration")
 		}
 	} else {
 		log.Warn("DISCORD_TOKEN not set; running API only")

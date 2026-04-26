@@ -2,13 +2,13 @@ package discord
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/bwmarrin/discordgo"
 	"github.com/gorilla/websocket"
 )
 
@@ -163,57 +163,32 @@ func TestOnReady_Idempotent(t *testing.T) {
 	}
 }
 
-// TestSanitizeCommandJSONShape pins down the on-the-wire JSON we send to
-// Discord when registering /sanitize. If discordgo or our local schema
-// types ever drift, this test fails before we ship a broken slash command.
-func TestSanitizeCommandJSONShape(t *testing.T) {
+// TestSanitizeCommandShape checks the /sanitize command we hand to
+// discordgo: name, type, and a required string `url` option.
+func TestSanitizeCommandShape(t *testing.T) {
 	t.Parallel()
 
 	cmd := sanitizeCommand()
-	out, err := json.Marshal([]applicationCommand{cmd})
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
+	if cmd.Name != sanitizeCommandName {
+		t.Errorf("Name = %q, want %q", cmd.Name, sanitizeCommandName)
 	}
-
-	var got []map[string]any
-	if err := json.Unmarshal(out, &got); err != nil {
-		t.Fatalf("unmarshal: %v", err)
+	if cmd.Type != discordgo.ChatApplicationCommand {
+		t.Errorf("Type = %v, want ChatApplicationCommand", cmd.Type)
 	}
-	if len(got) != 1 {
-		t.Fatalf("len(commands) = %d, want 1", len(got))
+	if cmd.Description == "" {
+		t.Errorf("Description must not be empty")
 	}
-	c := got[0]
-	if c["name"] != sanitizeCommandName {
-		t.Errorf("command name = %v, want %q", c["name"], sanitizeCommandName)
+	if len(cmd.Options) != 1 {
+		t.Fatalf("len(Options) = %d, want 1", len(cmd.Options))
 	}
-	if c["description"] != "Sanitize a URL" {
-		t.Errorf("command description = %v", c["description"])
+	opt := cmd.Options[0]
+	if opt.Name != "url" {
+		t.Errorf("option Name = %q, want \"url\"", opt.Name)
 	}
-	if c["type"] != float64(1) {
-		t.Errorf("command type = %v, want 1", c["type"])
+	if opt.Type != discordgo.ApplicationCommandOptionString {
+		t.Errorf("option Type = %v, want String", opt.Type)
 	}
-
-	options, ok := c["options"].([]any)
-	if !ok {
-		t.Fatalf("options is not an array: %T", c["options"])
-	}
-	if len(options) != 1 {
-		t.Fatalf("len(options) = %d, want 1", len(options))
-	}
-	opt, ok := options[0].(map[string]any)
-	if !ok {
-		t.Fatalf("option[0] not an object: %T", options[0])
-	}
-	if opt["name"] != "url" {
-		t.Errorf("option name = %v, want \"url\"", opt["name"])
-	}
-	if opt["description"] != "URL to sanitize" {
-		t.Errorf("option description = %v", opt["description"])
-	}
-	if opt["type"] != float64(3) {
-		t.Errorf("option type = %v, want 3 (STRING)", opt["type"])
-	}
-	if opt["required"] != true {
-		t.Errorf("option required = %v, want true", opt["required"])
+	if !opt.Required {
+		t.Errorf("option Required = false, want true")
 	}
 }
