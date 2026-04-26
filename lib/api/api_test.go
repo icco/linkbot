@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -91,6 +92,94 @@ func TestMetricsEndpoint(t *testing.T) {
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("metrics body missing %q\nbody:\n%s", want, text)
+		}
+	}
+}
+
+// TestIndexSecurityHeaders asserts the landing page sets the expected
+// security headers, that the per-request CSP nonce is plumbed into the
+// rendered <script>/<style> tags, and that the JSON API routes don't
+// pick up the HTML-only headers.
+func TestIndexSecurityHeaders(t *testing.T) {
+	h := api.Router(api.Options{
+		Sanitizer:       stubSanitizer{},
+		Logger:          zap.NewNop().Sugar(),
+		DiscordClientID: "123456789012345678",
+	})
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL + "/") //nolint:noctx // test
+	if err != nil {
+		t.Fatalf("get /: %v", err)
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			t.Logf("close index body: %v", err)
+		}
+	}()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read index body: %v", err)
+	}
+
+	csp := resp.Header.Get("Content-Security-Policy")
+	for _, want := range []string{
+		"frame-ancestors 'none'",
+		"connect-src 'self' https://reportd.natwelch.com",
+		"script-src 'self' 'nonce-",
+		"report-uri https://reportd.natwelch.com/report/linkbot",
+	} {
+		if !strings.Contains(csp, want) {
+			t.Errorf("CSP missing %q; got %q", want, csp)
+		}
+	}
+
+	for header, want := range map[string]string{
+		"Reporting-Endpoints":       `default="https://reportd.natwelch.com/reporting/linkbot"`,
+		"Referrer-Policy":           "strict-origin-when-cross-origin",
+		"X-Content-Type-Options":    "nosniff",
+		"X-Frame-Options":           "DENY",
+		"Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+	} {
+		if got := resp.Header.Get(header); got != want {
+			t.Errorf("%s = %q, want %q", header, got, want)
+		}
+	}
+
+	m := regexp.MustCompile(`'nonce-([^']+)'`).FindStringSubmatch(csp)
+	if len(m) != 2 {
+		t.Fatalf("no nonce in CSP: %q", csp)
+	}
+	nonce := m[1]
+	bodyStr := string(body)
+	if !strings.Contains(bodyStr, `<style nonce="`+nonce+`">`) {
+		t.Errorf("style nonce attr missing %q", nonce)
+	}
+	if !strings.Contains(bodyStr, `<script type="module" nonce="`+nonce+`">`) {
+		t.Errorf("script nonce attr missing %q", nonce)
+	}
+	if !strings.Contains(bodyStr, "Add linkbot to your Discord server") {
+		t.Errorf("invite CTA missing from body")
+	}
+
+	hc, err := http.Get(srv.URL + "/healthcheck") //nolint:noctx // test
+	if err != nil {
+		t.Fatalf("get /healthcheck: %v", err)
+	}
+	defer func() {
+		if err := hc.Body.Close(); err != nil {
+			t.Logf("close healthcheck body: %v", err)
+		}
+	}()
+	for _, header := range []string{
+		"Content-Security-Policy",
+		"Reporting-Endpoints",
+		"X-Frame-Options",
+		"Strict-Transport-Security",
+	} {
+		if got := hc.Header.Get(header); got != "" {
+			t.Errorf("/healthcheck unexpectedly set %s = %q", header, got)
 		}
 	}
 }
