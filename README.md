@@ -7,25 +7,9 @@ Deezer, etc.) through [Odesli / song.link](https://odesli.co/) so they open on w
 the reader uses.
 
 Stack: Go, [chi](https://github.com/go-chi/chi), [discordgo](https://github.com/bwmarrin/discordgo),
-`log/slog` JSON logs.
-
-## News-link sanitization
-
-Non-music URLs flow through a host-aware rule engine in `lib/careen` that strips tracking
-parameters and unwraps redirect wrappers. The rule set is ported from
-[timball/Careen](https://github.com/timball/Careen); hosts currently covered include:
-
-- **Google Workspace** (`docs|drive|sheets|slides|forms|mail|calendar|sites|meet|chat|contacts.google.*`):
-  keep `tab`, `gid`, `usp`, `authuser`.
-- **Google Search** (`google.<TLD>`): keep `q`, force `udm=14&pws=0` to bypass AI summaries.
-- **Amazon** (`amazon.<TLD>`): drop the `/ref=…` path tail plus the entire query.
-- **Reddit**, and any unknown host: strip the query string and fragment outright.
-- **YouTube** / `youtu.be` / **Twitch**: keep only `v` and/or `t`.
-- **Apple News** (`apple.news`): fetch the wrapper page, extract the underlying article URL,
-  recurse so the publisher URL is also cleaned.
-- **NYTimes**: keep `unlocked_article_code` (gift-link tokens) and drop everything else.
-- **Google `search.app`**: follow the first redirect and clean the destination.
-- **`admin.cloud.microsoft`**: leave untouched (its query string is real routing state).
+[icco/gutil](https://github.com/icco/gutil) (zap-based JSON logs),
+[otelhttp](https://pkg.go.dev/go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp)
++ Prometheus exporter (`/metrics`).
 
 ## Documentation
 
@@ -34,11 +18,12 @@ and `lib/odesli`: <https://pkg.go.dev/github.com/icco/linkbot>.
 
 ## API
 
-| Method | Path           | Description                                                           |
-|--------|----------------|-----------------------------------------------------------------------|
-| `GET`  | `/`            | HTML landing page describing the API and the Discord invite.         |
-| `POST` | `/sanitize`    | Body: `{"url": "..."}`. Returns `{"url", "sanitized", "changed"}`.   |
-| `GET`  | `/healthcheck` | Liveness probe.                                                       |
+| Method | Path           | Description                                                                                                                |
+|--------|----------------|----------------------------------------------------------------------------------------------------------------------------|
+| `GET`  | `/`            | HTML landing page describing the API and the Discord invite.                                                               |
+| `POST` | `/sanitize`    | Body: `{"url": "..."}`. Returns `{"url", "sanitized", "changed"}`.                                                         |
+| `GET`  | `/healthcheck` | Liveness probe.                                                                                                            |
+| `GET`  | `/metrics`     | OTel HTTP semconv metrics (e.g. `http_server_request_duration_seconds`) in [Prometheus exposition format](https://prometheus.io/docs/instrumenting/exposition_formats/). |
 
 ```bash
 curl -sS -X POST http://localhost:8080/sanitize \
@@ -80,10 +65,3 @@ docker run --rm -p 8080:8080 -e DISCORD_TOKEN=... linkbot
 See [`AGENTS.md`](./AGENTS.md) for the conventions used by both human and AI contributors,
 including the [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) policy
 enforced on every PR.
-
-## Acknowledgements
-
-Thanks to [Tim Ball (`@timball`)](https://github.com/timball) — the `lib/careen` package is a
-Go port of [timball/Careen](https://github.com/timball/Careen), with the same host patterns,
-parameter allowlists, and recursive Apple News / `search.app` handling. The opinionated
-paywall-bypass and archive-mirror rules from Careen are deliberately not ported.

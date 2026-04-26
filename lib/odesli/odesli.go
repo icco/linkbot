@@ -1,6 +1,6 @@
-// Package odesli is a small client for the public Odesli (song.link) API.
-//
-// See https://www.notion.so/odesli/Public-API-d8093b1bb35f4f91a85c0e337c1ff8d5.
+// Package odesli is a client for the Odesli (song.link) API. The
+// default transport is wrapped with otelhttp for auto traces and
+// http.client.request.duration.
 package odesli
 
 import (
@@ -8,14 +8,20 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"time"
+
+	"github.com/icco/gutil/logging"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.uber.org/zap"
 )
 
 // DefaultBaseURL is the public Odesli endpoint.
 const DefaultBaseURL = "https://api.song.link/v1-alpha.1/links"
+
+// userAgent is sent on every Odesli request.
+const userAgent = "linkbot/0.1 (+https://github.com/icco/linkbot)"
 
 // Client talks to the Odesli API.
 type Client struct {
@@ -23,13 +29,12 @@ type Client struct {
 	baseURL string
 	apiKey  string
 	country string
-	log     *slog.Logger
 }
 
 // Option configures a Client.
 type Option func(*Client)
 
-// WithAPIKey sets an Odesli API key (optional; raises rate limits).
+// WithAPIKey sets an Odesli API key (raises rate limits).
 func WithAPIKey(k string) Option {
 	return func(c *Client) {
 		c.apiKey = k
@@ -50,19 +55,22 @@ func WithBaseURL(u string) Option {
 	}
 }
 
-// WithHTTPClient overrides the HTTP client.
+// WithHTTPClient overrides the HTTP client; callers own its
+// instrumentation.
 func WithHTTPClient(h *http.Client) Option {
 	return func(c *Client) {
 		c.http = h
 	}
 }
 
-// New returns a Client with sensible defaults.
-func New(log *slog.Logger, opts ...Option) *Client {
+// New returns a Client with a 15 s timeout, otelhttp-wrapped transport.
+func New(opts ...Option) *Client {
 	c := &Client{
-		http:    &http.Client{Timeout: 15 * time.Second},
+		http: &http.Client{
+			Timeout:   15 * time.Second,
+			Transport: otelhttp.NewTransport(http.DefaultTransport),
+		},
 		baseURL: DefaultBaseURL,
-		log:     log,
 	}
 	for _, o := range opts {
 		o(c)
@@ -70,14 +78,14 @@ func New(log *slog.Logger, opts ...Option) *Client {
 	return c
 }
 
-// Response is the subset of the Odesli /links response we care about.
+// Response is the subset of /links we use.
 type Response struct {
 	EntityUniqueID string `json:"entityUniqueId"`
 	UserCountry    string `json:"userCountry"`
 	PageURL        string `json:"pageUrl"`
 }
 
-// Resolve returns the canonical song.link page URL for a streaming-service link.
+// Resolve returns the song.link page URL for a streaming link.
 func (c *Client) Resolve(ctx context.Context, link string) (*Response, error) {
 	q := url.Values{}
 	q.Set("url", link)
@@ -93,7 +101,7 @@ func (c *Client) Resolve(ctx context.Context, link string) (*Response, error) {
 		return nil, fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "linkbot/0.1 (+https://github.com/icco/linkbot)")
+	req.Header.Set("User-Agent", userAgent)
 
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -101,7 +109,7 @@ func (c *Client) Resolve(ctx context.Context, link string) (*Response, error) {
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			c.log.Warn("close odesli response body", "error", err)
+			logging.FromContext(ctx).Warnw("close odesli response body", zap.Error(err))
 		}
 	}()
 
@@ -123,9 +131,8 @@ func (c *Client) Resolve(ctx context.Context, link string) (*Response, error) {
 	return &out, nil
 }
 
-// truncate returns s clipped to at most n bytes, appending an ellipsis when
-// truncation occurs. Used for Odesli error bodies so we never log a giant
-// HTML error page in full.
+// truncate clips s to n bytes, appending "..." when cut, so giant
+// error bodies don't blow up logs.
 func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s

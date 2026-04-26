@@ -6,7 +6,6 @@ package sanitize
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -17,8 +16,8 @@ import (
 	"github.com/icco/linkbot/lib/odesli"
 )
 
-// urlRE matches bare http(s) URLs in free-form text, stopping at common
-// punctuation and whitespace so trailing characters do not get captured.
+// urlRE matches http(s) URLs, stopping at whitespace, quotes, and
+// angle brackets so trailing chat punctuation isn't pulled in.
 var urlRE = regexp.MustCompile(`https?://[^\s<>"'\x60]+`)
 
 // musicHosts lists the streaming hosts Odesli understands.
@@ -44,11 +43,10 @@ var musicHosts = []string{
 // defaultHTTPTimeout caps outbound calls made by careen.Clean.
 const defaultHTTPTimeout = 5 * time.Second
 
-// Sanitizer rewrites URLs. Music links go through Odesli; everything
-// else goes through careen.Clean using hc.
+// Sanitizer rewrites URLs: music links via Odesli, everything else
+// via careen.Clean.
 type Sanitizer struct {
 	odesli *odesli.Client
-	log    *slog.Logger
 	hc     *http.Client
 }
 
@@ -62,12 +60,10 @@ func WithHTTPClient(h *http.Client) Option {
 	}
 }
 
-// New constructs a Sanitizer. Without WithHTTPClient it uses a 5 s
-// timeout client.
-func New(o *odesli.Client, log *slog.Logger, opts ...Option) *Sanitizer {
+// New constructs a Sanitizer with a 5 s default HTTP client.
+func New(o *odesli.Client, opts ...Option) *Sanitizer {
 	s := &Sanitizer{
 		odesli: o,
-		log:    log,
 		hc:     &http.Client{Timeout: defaultHTTPTimeout},
 	}
 	for _, opt := range opts {
@@ -87,8 +83,7 @@ func FindURLs(text string) []string {
 	return out
 }
 
-// URL returns a sanitized version of raw, or the original string when no
-// rewrite applies. An error means sanitization was attempted but failed.
+// URL returns a sanitized raw, or raw itself when no rewrite applies.
 func (s *Sanitizer) URL(ctx context.Context, raw string) (string, error) {
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -118,8 +113,7 @@ func Changed(before, after string) bool {
 	return before != after && after != ""
 }
 
-// isMusicHost reports whether host (or any subdomain of host) belongs to
-// a streaming service Odesli understands. Case-insensitive.
+// isMusicHost reports whether host (or a subdomain) is in musicHosts.
 func isMusicHost(host string) bool {
 	host = strings.ToLower(host)
 	for _, suffix := range musicHosts {
