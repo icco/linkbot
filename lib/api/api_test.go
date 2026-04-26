@@ -3,6 +3,7 @@ package api_test
 import (
 	"bytes"
 	"context"
+	"html"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -152,15 +153,20 @@ func TestIndexSecurityHeaders(t *testing.T) {
 		t.Fatalf("no nonce in CSP: %q", csp)
 	}
 	nonce := m[1]
-	bodyStr := string(body)
+	// html/template entity-encodes some base64 chars (e.g. '+' -> '&#43;');
+	// browsers decode those before CSP nonce matching, so we do too.
+	bodyStr := html.UnescapeString(string(body))
 	if !strings.Contains(bodyStr, `<style nonce="`+nonce+`">`) {
 		t.Errorf("style nonce attr missing %q", nonce)
 	}
 	if !strings.Contains(bodyStr, `<script type="module" nonce="`+nonce+`">`) {
 		t.Errorf("script nonce attr missing %q", nonce)
 	}
-	if !strings.Contains(bodyStr, "Add linkbot to your Discord server") {
+	if !strings.Contains(bodyStr, "Add to Discord") {
 		t.Errorf("invite CTA missing from body")
+	}
+	if !strings.Contains(bodyStr, `<link rel="icon"`) {
+		t.Errorf("favicon link missing from body")
 	}
 
 	hc, err := http.Get(srv.URL + "/healthcheck") //nolint:noctx // test

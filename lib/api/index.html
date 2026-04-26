@@ -2,11 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>linkbot &mdash; clean up the links your friends share</title>
+  <title>linkbot</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="A Discord bot that strips tracking junk, unlocks paywalled articles, and turns music links into universal song.link URLs.">
   <meta name="referrer" content="strict-origin-when-cross-origin">
   <meta name="color-scheme" content="light dark">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <style nonce="{{.Nonce}}">
     :root {
       --fg: #1a1a1a;
@@ -50,6 +51,7 @@
     }
     .invite {
       display: inline-block;
+      margin: 1.5rem 0;
       padding: 0.55rem 1rem;
       background: #5865f2;
       color: #fff;
@@ -72,7 +74,7 @@
   <p class="tagline">A Discord bot that quietly cleans up the links your friends share.</p>
 
   {{if .InviteURL}}
-  <p><a class="invite" href="{{.InviteURL}}">Add linkbot to your Discord server</a></p>
+  <a class="invite" href="{{.InviteURL}}">Add to Discord</a>
   {{end}}
 
   <h2>What it does</h2>

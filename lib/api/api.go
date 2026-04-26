@@ -47,6 +47,7 @@ func Router(opts Options) http.Handler {
 		r.Use(reportingEndpointsHeader)
 		r.Get("/", handleIndex(opts.DiscordClientID))
 	})
+	r.Get("/favicon.svg", handleFavicon)
 	r.Get("/healthcheck", handleHealthcheck)
 	r.Post("/sanitize", handleSanitize(opts.Sanitizer))
 
