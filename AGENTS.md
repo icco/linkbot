@@ -190,6 +190,13 @@ BREAKING CHANGE: callers must update to Clean(ctx, url).
 - The Discord bot must not reply if the sanitized URL already appears
   in the source message or in the last `recentLookback` channel
   messages, to avoid duplicating other bots' or users' work.
+- The careen host rules, paywall regex list, and archive mirror
+  (`archive.ph`) are hard-coded package-level vars/consts in
+  `lib/careen`. Add new entries there rather than threading them
+  through env vars; they almost never vary per deployment.
+- A rule with `noArchive: true` (e.g. `admin.cloud.microsoft`) opts a
+  trusted host out of paywall-archive routing even if some future
+  paywall regex would otherwise match.
 
 ## CI / repo layout
 

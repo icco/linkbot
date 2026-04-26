@@ -46,11 +46,28 @@
 
   <h2>HTTP API</h2>
   <p>
-    POST a URL and get a sanitized version back. Music links (Spotify, Apple
-    Music, YouTube Music, Tidal, Deezer, etc.) are resolved through
-    <a href="https://odesli.co/">Odesli</a> to a universal
-    <code>song.link</code> page.
+    POST a URL and get a sanitized version back. linkbot does three things:
   </p>
+  <ul>
+    <li>
+      <strong>Music links</strong> (Spotify, Apple Music, YouTube Music, Tidal,
+      Deezer, &hellip;) are resolved through
+      <a href="https://odesli.co/">Odesli</a> to a universal
+      <code>song.link</code> page.
+    </li>
+    <li>
+      <strong>Tracking params</strong> (<code>utm_*</code>,
+      <code>fbclid</code>, <code>gclid</code>, &hellip;) are stripped via
+      host-aware rules ported from
+      <a href="https://github.com/timball/Careen">timball/Careen</a>.
+    </li>
+    <li>
+      <strong>Paywalled hosts</strong> (WSJ, FT, Bloomberg, Washington Post,
+      The Atlantic, The New Yorker, &hellip;) are rewritten through an
+      <a href="https://archive.ph/">archive.ph</a> prefix so readers
+      without a subscription can still open the link.
+    </li>
+  </ul>
 
   <p><strong>POST <code>/sanitize</code></strong></p>
 <pre><code>curl -X POST https://this-host/sanitize \
