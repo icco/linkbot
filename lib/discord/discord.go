@@ -1,11 +1,7 @@
-// Package discord wires linkbot to Discord via bwmarrin/discordgo.
-//
-// Surfaces:
-//   - a message listener that replies with sanitized URLs;
-//   - a /sanitize global slash command served via InteractionCreate.
-//
-// Both surfaces authenticate with the bot token; no extra OAuth2 dance is
-// required for command registration.
+// Package discord wires linkbot to Discord via bwmarrin/discordgo:
+// a MessageCreate listener replies with sanitized URLs and a global
+// /sanitize slash command is served via InteractionCreate. Both
+// surfaces authenticate with the bot token alone.
 package discord
 
 import (
@@ -273,7 +269,7 @@ func (b *Bot) handleInteraction(base *zap.SugaredLogger) func(*discordgo.Session
 			return
 		}
 
-		fields := []interface{}{
+		fields := []any{
 			"interaction_id", i.ID,
 			"command", data.Name,
 		}
