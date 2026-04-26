@@ -1,6 +1,6 @@
 # linkbot
 
-A Discord bot and HTTP API that **sanitizes URLs**.
+A Discord bot and HTTP API that **sanitizes URLs**. See <https://linkbot.natwelch.com> to install in your discord server.
 
 What "sanitize" means today:
 
@@ -14,11 +14,6 @@ What "sanitize" means today:
   so readers without a subscription can still open the link, and so we don't pile load
   onto a single mirror. Already-archived URLs and trusted workspace hosts
   (`admin.cloud.microsoft`) pass through untouched.
-
-Stack: Go, [chi](https://github.com/go-chi/chi), [discordgo](https://github.com/bwmarrin/discordgo),
-[icco/gutil](https://github.com/icco/gutil) (zap-based JSON logs),
-[otelhttp](https://pkg.go.dev/go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp)
-+ Prometheus exporter (`/metrics`).
 
 ## Documentation
 
