@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/icco/gutil/logging"
@@ -40,16 +41,6 @@ var archiveMirrors = []string{
 	"archive.ph",
 	"archive.today",
 }
-
-// archiveMirrorSet is a lookup-friendly view of archiveMirrors used by
-// clean to detect URLs that are already archived.
-var archiveMirrorSet = func() map[string]struct{} {
-	m := make(map[string]struct{}, len(archiveMirrors))
-	for _, h := range archiveMirrors {
-		m[h] = struct{}{}
-	}
-	return m
-}()
 
 // pickArchiveMirror returns a mirror host from archiveMirrors. It is a
 // var so tests can pin a deterministic mirror via pinMirror.
@@ -156,7 +147,7 @@ func (c *cleaner) clean(ctx context.Context, u *url.URL) (string, error) {
 		return u.String(), nil
 	}
 	host := strings.ToLower(u.Host)
-	if _, archived := archiveMirrorSet[host]; archived {
+	if slices.Contains(archiveMirrors, host) {
 		return u.String(), nil
 	}
 	if c.hop >= c.maxHops {
@@ -192,12 +183,9 @@ func dispatch(c *cleaner, host string) (strategy, bool) {
 
 // isPaywalled reports whether host matches any paywallHosts pattern.
 func isPaywalled(host string) bool {
-	for _, re := range paywallHosts {
-		if re.MatchString(host) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(paywallHosts, func(re *regexp.Regexp) bool {
+		return re.MatchString(host)
+	})
 }
 
 // stripAll drops the query and fragment.
@@ -215,14 +203,10 @@ func keepAll(_ context.Context, u *url.URL) (string, error) {
 
 // keepSpecificParams keeps only named query params, merges extra, drops fragment.
 func keepSpecificParams(keep []string, extra map[string]string) strategy {
-	set := make(map[string]struct{}, len(keep))
-	for _, k := range keep {
-		set[k] = struct{}{}
-	}
 	return func(_ context.Context, u *url.URL) (string, error) {
 		out := url.Values{}
 		for k, vs := range u.Query() {
-			if _, ok := set[k]; !ok {
+			if !slices.Contains(keep, k) {
 				continue
 			}
 			for _, v := range vs {
