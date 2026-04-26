@@ -12,6 +12,26 @@ nothing else is implemented yet.
 
 Stack: **Go**, **chi** (HTTP), **discordgo** (gateway), **log/slog** (JSON logs).
 
+## What's implemented
+
+- Discord bot: detects URLs in messages and replies with sanitized versions.
+- HTTP API: `POST /sanitize` and `GET /healthz`.
+- Music-link sanitization through Odesli (Spotify, Apple Music, YouTube
+  Music, Tidal, Deezer, Amazon Music, SoundCloud, etc. — see
+  `lib/sanitize/sanitize.go` for the full host list).
+
+## Not implemented (future work)
+
+The `lib/sanitize` package has the seam for the items below; the actual
+rewriting logic lands in follow-up PRs.
+
+- Strip tracking parameters (`utm_*`, `fbclid`, `gclid`, `igshid`, `mc_cid`, …).
+- Unwrap Google AMP URLs to the canonical page.
+- Follow common URL shorteners (`t.co`, `bit.ly`, `goo.gl`, `tinyurl.com`, …).
+- Canonicalize trailing slashes and default ports.
+- Per-guild opt-in / opt-out for the Discord bot.
+- Slash command for explicit `/sanitize <url>`.
+
 ## Features
 
 - Discord bot listens for messages, finds URLs, and replies with sanitized versions.
@@ -89,13 +109,7 @@ docker run --rm -p 8080:8080 -e DISCORD_TOKEN=... linkbot
 ## Contributing
 
 All work happens in feature branches and lands via PR. PR titles and any
-commits that hit `main` must follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/).
-See [`AGENTS.md`](./AGENTS.md) for the full set of conventions used by both
-human and AI contributors.
-
-## Roadmap
-
-- Strip tracking parameters (`utm_*`, `fbclid`, `gclid`, `igshid`, …).
-- Unwrap AMP and common URL shorteners.
-- Allow per-guild opt-in / opt-out.
-- Slash command for explicit `/sanitize <url>`.
+commits that hit `main` must follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/);
+the `PR title` GitHub Action enforces this on every pull request.
+See [`AGENTS.md`](./AGENTS.md) for the full set of conventions used by
+both human and AI contributors.
