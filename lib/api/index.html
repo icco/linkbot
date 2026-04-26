@@ -2,124 +2,146 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>linkbot</title>
+  <title>linkbot &mdash; clean up the links your friends share</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="A Discord bot that strips tracking junk, unlocks paywalled articles, and turns music links into universal song.link URLs.">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <meta name="color-scheme" content="light dark">
   <style>
+    :root {
+      --fg: #1a1a1a;
+      --muted: #5d5d63;
+      --bg: #fff;
+      --accent: #4452cf;
+      --rule: rgba(0, 0, 0, 0.1);
+      --chip: rgba(0, 0, 0, 0.06);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --fg: #ececef;
+        --muted: #a8a8b0;
+        --bg: #0f1014;
+        --accent: #8ea0ff;
+        --rule: rgba(255, 255, 255, 0.12);
+        --chip: rgba(255, 255, 255, 0.08);
+      }
+    }
+    html, body { background: var(--bg); }
     body {
-      max-width: 720px;
-      margin: 2rem auto;
-      padding: 0 1rem;
-      font: 1rem/1.5 system-ui, -apple-system, sans-serif;
-      color: #222;
+      max-width: 640px;
+      margin: 3rem auto;
+      padding: 0 1.25rem;
+      font: 1.05rem/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+      color: var(--fg);
     }
-    h1 { margin-bottom: 0.25rem; }
-    h2 { margin-top: 2rem; }
-    code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-    pre {
-      background: #f4f4f5;
-      padding: 0.75rem 1rem;
-      border-radius: 6px;
-      overflow-x: auto;
-      font: 0.95rem/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    h1 { font-size: 2.4rem; margin: 0 0 0.25rem; letter-spacing: -0.02em; }
+    h2 { font-size: 1.2rem; margin: 2.25rem 0 0.5rem; }
+    p { margin: 0.6rem 0; }
+    ul { padding-left: 1.25rem; }
+    li { margin-bottom: 0.55rem; }
+    a { color: var(--accent); }
+    .tagline { font-size: 1.15rem; color: var(--muted); margin-top: 0; }
+    .muted { color: var(--muted); }
+    code {
+      font: 0.95em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      background: var(--chip);
+      padding: 0.05em 0.35em;
+      border-radius: 4px;
     }
-    p code {
-      background: #f4f4f5;
-      padding: 0.1rem 0.3rem;
-      border-radius: 3px;
-    }
-    .muted { color: #666; }
     .invite {
       display: inline-block;
-      padding: 0.55rem 1rem;
+      padding: 0.7rem 1.25rem;
+      margin: 1rem 0 0.25rem;
       background: #5865f2;
       color: #fff;
       text-decoration: none;
-      border-radius: 6px;
+      border-radius: 8px;
       font-weight: 600;
     }
-    .invite:hover { background: #4752c4; }
+    .invite:hover, .invite:focus-visible { background: #4752c4; }
+    footer {
+      margin-top: 3rem;
+      padding-top: 1.25rem;
+      border-top: 1px solid var(--rule);
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
   </style>
 </head>
 <body>
   <h1>linkbot</h1>
-  <p class="muted">A Discord bot and HTTP API that sanitizes URLs.</p>
+  <p class="tagline">A Discord bot that quietly cleans up the links your friends share.</p>
 
-  <h2>HTTP API</h2>
-  <p>
-    POST a URL and get a sanitized version back. linkbot does three things:
-  </p>
+  <h2>What it does</h2>
   <ul>
     <li>
-      <strong>Music links</strong> (Spotify, Apple Music, YouTube Music, Tidal,
-      Deezer, &hellip;) are resolved through
-      <a href="https://odesli.co/">Odesli</a> to a universal
-      <code>song.link</code> page.
+      <strong>Universal music links.</strong>
+      Spotify, Apple Music, YouTube Music, Tidal, and Deezer URLs are rewritten
+      through <a href="https://odesli.co/">Odesli</a> to a
+      <code>song.link</code> page anyone in the channel can open, no matter
+      which streaming service they use.
     </li>
     <li>
-      <strong>Tracking params</strong> (<code>utm_*</code>,
-      <code>fbclid</code>, <code>gclid</code>, &hellip;) are stripped via
-      host-aware rules ported from
-      <a href="https://github.com/timball/Careen">timball/Careen</a>.
+      <strong>No more tracking junk.</strong>
+      Strips <code>utm_*</code>, <code>fbclid</code>, <code>gclid</code>, and
+      friends so you share the actual link, not the ad-tagged one.
     </li>
     <li>
-      <strong>Paywalled hosts</strong> (WSJ, FT, Bloomberg, Washington Post,
-      The Atlantic, The New Yorker, &hellip;) are rewritten through a
-      randomly chosen <a href="https://archive.today/">archive.today</a>
-      mirror so readers without a subscription can still open the link
-      and load is spread across mirrors.
+      <strong>Paywalls, opened.</strong>
+      Articles from sites like the WSJ, FT, Bloomberg, the Washington Post,
+      and the New Yorker are rewritten through a random
+      <a href="https://archive.today/">archive.today</a> mirror so everyone
+      can read along.
     </li>
   </ul>
 
-  <p><strong>POST <code>/sanitize</code></strong></p>
-<pre><code>curl -X POST https://this-host/sanitize \
-  -H 'Content-Type: application/json' \
-  -d '{"url":"https://open.spotify.com/track/1jJci4qxiYcOHhQR247rEU"}'</code></pre>
-
-  <p>Returns:</p>
-<pre><code>{
-  "url": "https://open.spotify.com/track/1jJci4qxiYcOHhQR247rEU",
-  "sanitized": "https://song.link/s/1jJci4qxiYcOHhQR247rEU",
-  "changed": true
-}</code></pre>
-
-  <p>
-    <strong>GET <code>/healthcheck</code></strong> &mdash; liveness probe, returns
-    <code>{"status":"ok"}</code>.
-  </p>
-
-  <h2>Discord bot</h2>
-  <p>
-    The bot watches messages, finds music links, and replies with the
-    <code>song.link</code> version so people on different streaming services
-    can still open them. It will not reply if the sanitized URL is already
-    in the source message or in the recent channel history.
-  </p>
-  <p class="muted">
-    When <code>DISCORD_CLIENT_ID</code> and <code>DISCORD_CLIENT_SECRET</code>
-    are both set, linkbot also registers a global <code>/sanitize</code>
-    slash command at startup so users can sanitize a URL on demand.
-  </p>
-
   {{if .InviteURL}}
-  <p><a class="invite" href="{{.InviteURL}}">Add linkbot to your server</a></p>
+  <p><a class="invite" href="{{.InviteURL}}">Add linkbot to your Discord server</a></p>
   <p class="muted">
-    Requires the <em>Send Messages</em> and <em>Read Message History</em>
-    permissions, plus the <em>Message Content</em> privileged intent on the
-    application.
-  </p>
-  {{else}}
-  <p>To invite the bot to your server, build an OAuth2 URL with your application's client ID:</p>
-<pre><code>https://discord.com/oauth2/authorize?client_id=&lt;CLIENT_ID&gt;&permissions=67584&scope=bot</code></pre>
-  <p class="muted">
-    Get the client ID from the
-    <a href="https://discord.com/developers/applications">Discord Developer Portal</a>.
-    Enable the <em>Message Content</em> privileged intent on the application,
-    and grant the <em>Send Messages</em> and <em>Read Message History</em>
-    permissions when inviting the bot.
+    linkbot needs the <em>Send Messages</em> and <em>Read Message History</em>
+    permissions, plus the application&rsquo;s <em>Message Content</em>
+    privileged intent.
   </p>
   {{end}}
 
-  <h2>Source</h2>
-  <p><a href="https://github.com/icco/linkbot">github.com/icco/linkbot</a></p>
+  <h2>How to use it</h2>
+  <p>
+    Once linkbot is in your server, it watches the channels it can read. When
+    it spots a music link or a paywalled article, it replies with a clean
+    version. You can also run <code>/sanitize</code> on any URL to get a
+    cleaned version on demand.
+  </p>
+  <p class="muted">
+    linkbot stays quiet if the clean link is already in the message or was
+    shared recently in the channel, so it won&rsquo;t double up on other
+    bots&rsquo; work.
+  </p>
+
+  <footer>
+    Open source on <a href="https://github.com/icco/linkbot">GitHub</a>.
+  </footer>
+
+  <script type="module">
+    import { onCLS, onINP, onLCP, onFCP, onTTFB }
+      from 'https://unpkg.com/web-vitals@5?module';
+
+    const endpoint = 'https://reportd.natwelch.com/analytics/linkbot';
+    function send(metric) {
+      const body = JSON.stringify(metric);
+      if (navigator.sendBeacon && navigator.sendBeacon(endpoint, body)) return;
+      fetch(endpoint, {
+        body,
+        method: 'POST',
+        keepalive: true,
+        headers: { 'Content-Type': 'application/json' },
+      }).catch(() => {});
+    }
+
+    onCLS(send);
+    onFCP(send);
+    onINP(send);
+    onLCP(send);
+    onTTFB(send);
+  </script>
 </body>
 </html>
