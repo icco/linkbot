@@ -15,6 +15,9 @@ RUN go build -ldflags="-s -w" -o /linkbot .
 # Final stage
 FROM alpine:3.23
 
+LABEL org.opencontainers.image.source=https://github.com/icco/linkbot
+LABEL org.opencontainers.image.description="Better links in your life"
+
 RUN apk add --no-cache ca-certificates tzdata
 RUN adduser -S -u 1001 app
 
