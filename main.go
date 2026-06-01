@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -26,14 +27,19 @@ import (
 	"github.com/icco/linkbot/lib/sanitize"
 )
 
-// main wires dependencies and blocks until SIGINT/SIGTERM.
 func main() {
+	if err := run(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+// run wires dependencies and blocks until SIGINT/SIGTERM.
+func run() error {
 	log, err := logging.NewLogger("linkbot")
 	if err != nil {
 		fallback, ferr := zap.NewProduction()
 		if ferr != nil {
-			fmt.Fprintf(os.Stderr, "logger init: %v / %v\n", err, ferr)
-			os.Exit(1)
+			return fmt.Errorf("logger init: %w / %w", err, ferr)
 		}
 		fallback.Warn("falling back to zap.NewProduction logger", zap.Error(err))
 		log = fallback.Sugar()
@@ -47,8 +53,7 @@ func main() {
 	registry := prometheus.NewRegistry()
 	exporter, err := otelprom.New(otelprom.WithRegisterer(registry))
 	if err != nil {
-		log.Errorw("otel prometheus exporter", zap.Error(err))
-		os.Exit(1)
+		return fmt.Errorf("otel prometheus exporter: %w", err)
 	}
 	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(exporter))
 	otel.SetMeterProvider(mp)
@@ -62,8 +67,7 @@ func main() {
 
 	cfg, err := config.Load()
 	if err != nil {
-		log.Errorw("config", zap.Error(err))
-		os.Exit(1)
+		return fmt.Errorf("config: %w", err)
 	}
 
 	odesliClient := odesli.New(
@@ -94,12 +98,10 @@ func main() {
 	if cfg.DiscordToken != "" {
 		b, err := discord.New(cfg.DiscordToken, san, log)
 		if err != nil {
-			log.Errorw("discord init", zap.Error(err))
-			os.Exit(1)
+			return fmt.Errorf("discord init: %w", err)
 		}
 		if err := b.Start(ctx); err != nil {
-			log.Errorw("discord start", zap.Error(err))
-			os.Exit(1)
+			return fmt.Errorf("discord start: %w", err)
 		}
 		bot = b
 
@@ -135,4 +137,5 @@ func main() {
 			log.Errorw("discord close", zap.Error(err))
 		}
 	}
+	return nil
 }

@@ -55,7 +55,7 @@ func TestMetricsEndpoint(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	body := bytes.NewReader([]byte(`{"url":"https://example.com/track/1"}`))
-	resp, err := http.Post(srv.URL+"/sanitize", "application/json", body)
+	resp, err := http.Post(srv.URL+"/sanitize", "application/json", body) //nolint:noctx // test
 	if err != nil {
 		t.Fatalf("post sanitize: %v", err)
 	}
