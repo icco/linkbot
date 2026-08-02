@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/icco/linkbot/lib/careen"
-	"github.com/icco/linkbot/lib/odesli"
+	"github.com/icco/odesli"
 )
 
 // urlRE matches http(s) URLs, stopping at whitespace, quotes, and angle brackets.
