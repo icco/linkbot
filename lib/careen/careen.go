@@ -2,7 +2,9 @@
 // routes known paywalled sites through an archive-mirror prefix.
 //
 // Host rules and strategies are a Go port of github.com/timball/Careen
-// (©Tim Ball).
+// (©Tim Ball), which is licensed GPL-3.0. This package is a derivative work of
+// it, and is why linkbot as a whole is GPL-3.0 rather than MIT like the rest of
+// icco's repos. Anything extracted from here carries the same obligation.
 package careen
 
 import (
