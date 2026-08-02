@@ -43,7 +43,7 @@ Every PR title and every commit that lands on `main` **must** follow the
 
 ```
 feat(api): add POST /sanitize endpoint
-fix(odesli): handle 429 rate-limit responses
+fix(careen): handle 429 rate-limit responses
 docs: document conventional-commit policy
 ci: build Docker image on every PR
 refactor(sanitize)!: rename Sanitizer.URL to Sanitizer.Clean
@@ -170,8 +170,10 @@ BREAKING CHANGE: callers must update to Clean(ctx, url).
 - Default to `http.Client{Timeout: 15 * time.Second}` unless the API's
   documented latency justifies otherwise.
 - Set a descriptive `User-Agent` (`linkbot/<version> (+repo URL)`).
-- Truncate any error body before logging or surfacing it (see
-  `odesli.truncate`) so a giant HTML 500 page doesn't blow up logs.
+- Bound any response body before reading, logging, or surfacing it, so a
+  giant HTML 500 page can't blow up logs or memory. `lib/careen` caps
+  reads with `io.LimitReader(resp.Body, bodyReadLimit)`; `lib/api` caps
+  request bodies with `http.MaxBytesReader`.
 
 ### Concurrency and shutdown
 
