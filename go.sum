@@ -24,6 +24,8 @@ github.com/gorilla/websocket v1.5.3 h1:saDtZ6Pbx/0u+bgYQ3q96pZgCzfhKXGPqt7kZ72aN
 github.com/gorilla/websocket v1.5.3/go.mod h1:YR8l580nyteQvAITg2hZ9XVh4b55+EU/adAjf1fMHhE=
 github.com/icco/gutil v0.0.0-20260507025405-5c92e792df94 h1:Fl+MUjPSaBe2Dv48KDGTNBknKzX0C3hiPgUDj8B5K5s=
 github.com/icco/gutil v0.0.0-20260507025405-5c92e792df94/go.mod h1:AXdTDvzFEXge4rsNivi4H7CBaZPZxXSnX7aK5VNOu00=
+github.com/icco/odesli v1.0.0 h1:2B1C50R96BBjUCABKuq37lBQKNg4nfb0LsNnCgQI9aE=
+github.com/icco/odesli v1.0.0/go.mod h1:52INKgG+9FsXWQAbvasvl7T4AWBFewh3ThFivWjvRY8=
 github.com/klauspost/compress v1.19.1 h1:VsB4HPswih7mmZ8WleSFQ75c/Ui1M4trX5oAsJnhSlk=
 github.com/klauspost/compress v1.19.1/go.mod h1:cwPg85FWrGar70rWktvGQj8/hthj3wpl0PGDogxkrSQ=
 github.com/kylelemons/godebug v1.1.0 h1:RPNrshWIDI6G2gRW9EHilWtl7Z6Sb1BR0xunSBf0SNc=

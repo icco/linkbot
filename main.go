@@ -1,4 +1,11 @@
 // Command linkbot runs a Discord bot and HTTP API that sanitize URLs.
+//
+// Copyright (C) 2026 Nat Welch
+//
+// This program is free software: you can redistribute it and/or modify it under
+// the terms of the GNU General Public License as published by the Free Software
+// Foundation, either version 3 of the License, or (at your option) any later
+// version. See the LICENSE file, or <https://www.gnu.org/licenses/>.
 package main
 
 import (
@@ -13,8 +20,10 @@ import (
 	"time"
 
 	"github.com/icco/gutil/logging"
+	"github.com/icco/odesli"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	otelprom "go.opentelemetry.io/otel/exporters/prometheus"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -23,9 +32,12 @@ import (
 	"github.com/icco/linkbot/lib/api"
 	"github.com/icco/linkbot/lib/config"
 	"github.com/icco/linkbot/lib/discord"
-	"github.com/icco/linkbot/lib/odesli"
 	"github.com/icco/linkbot/lib/sanitize"
 )
+
+// odesliUserAgent identifies linkbot to Odesli. icco/odesli defaults to naming
+// itself, so we override it to keep the identification the vendored copy sent.
+const odesliUserAgent = "linkbot/0.1 (+https://github.com/icco/linkbot)"
 
 func main() {
 	if err := run(); err != nil {
@@ -70,9 +82,16 @@ func run() error {
 		return fmt.Errorf("config: %w", err)
 	}
 
+	// icco/odesli defaults to a plain transport so it carries no otel
+	// dependency of its own; instrumentation is ours to supply.
 	odesliClient := odesli.New(
 		odesli.WithAPIKey(cfg.OdesliAPIKey),
 		odesli.WithUserCountry(config.UserCountry),
+		odesli.WithUserAgent(odesliUserAgent),
+		odesli.WithHTTPClient(&http.Client{
+			Timeout:   15 * time.Second,
+			Transport: otelhttp.NewTransport(http.DefaultTransport),
+		}),
 	)
 	san := sanitize.New(odesliClient)
 

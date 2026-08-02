@@ -18,7 +18,8 @@ What "sanitize" means today:
 ## Documentation
 
 For implementation details see the godoc for each package under `lib/`, especially `lib/sanitize`
-and `lib/odesli`: <https://pkg.go.dev/github.com/icco/linkbot>.
+and `lib/careen`: <https://pkg.go.dev/github.com/icco/linkbot>. The Odesli client lives in its own
+repo: <https://pkg.go.dev/github.com/icco/odesli>.
 
 ## API
 
@@ -71,3 +72,15 @@ docker run --rm -p 8080:8080 -e DISCORD_TOKEN=... linkbot
 See [`AGENTS.md`](./AGENTS.md) for the conventions used by both human and AI contributors,
 including the [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) policy
 enforced on every PR.
+
+## License
+
+**GPL-3.0.** See [`LICENSE`](./LICENSE).
+
+This is the one repo of mine that isn't MIT, and the reason is `lib/careen`: its host rules and
+strategies are a Go port of [timball/Careen](https://github.com/timball/Careen) (©Tim Ball), which
+is GPL-3.0. A port of that rule set is a derivative work, so linkbot inherits the licence.
+
+If you want to reuse a piece of this under a permissive licence, the parts that never touched
+careen have already been split out — see [icco/odesli](https://github.com/icco/odesli), which is
+MIT.

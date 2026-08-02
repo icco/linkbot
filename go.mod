@@ -7,6 +7,7 @@ require (
 	github.com/go-chi/chi/v5 v5.3.1
 	github.com/gorilla/websocket v1.5.3
 	github.com/icco/gutil v0.0.0-20260507025405-5c92e792df94
+	github.com/icco/odesli v1.0.0
 	github.com/prometheus/client_golang v1.24.1
 	github.com/unrolled/secure v1.17.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.69.0
