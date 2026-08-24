@@ -4,7 +4,7 @@ go 1.26.2
 
 require (
 	github.com/bwmarrin/discordgo v0.29.0
-	github.com/go-chi/chi/v5 v5.3.1
+	github.com/go-chi/chi/v5 v5.3.2
 	github.com/gorilla/websocket v1.5.3
 	github.com/icco/gutil v1.0.11
 	github.com/icco/odesli v1.0.4
