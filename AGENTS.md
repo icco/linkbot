@@ -1,7 +1,6 @@
 # AGENTS.md
 
 Guidance for coding agents and contributors working on linkbot.
-See [CLAUDE.md](CLAUDE.md) for Claude Code entrypoint (`@AGENTS.md`).
 
 ## Conventional Commits
 
