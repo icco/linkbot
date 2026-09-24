@@ -22,8 +22,8 @@ github.com/gorilla/websocket v1.5.3 h1:saDtZ6Pbx/0u+bgYQ3q96pZgCzfhKXGPqt7kZ72aN
 github.com/gorilla/websocket v1.5.3/go.mod h1:YR8l580nyteQvAITg2hZ9XVh4b55+EU/adAjf1fMHhE=
 github.com/icco/gutil v1.0.19 h1:uVUABFQOCY0xpCS134fhLyD9YILRpfgf+/mOYihIL2w=
 github.com/icco/gutil v1.0.19/go.mod h1:jnE3yHLhVGTaUR/79hNHEAaZYOT6sbcnRMZL/lcEOvI=
-github.com/icco/odesli v1.0.4 h1:FeEjCsHurrdv2piqPbmLstzjJZtPBn1/wcCBNreH92c=
-github.com/icco/odesli v1.0.4/go.mod h1:52INKgG+9FsXWQAbvasvl7T4AWBFewh3ThFivWjvRY8=
+github.com/icco/odesli v1.0.5 h1:ERx+2ICGBkGBKOCY+5Nz0M39Ic8aNHBF3399HLpdVYc=
+github.com/icco/odesli v1.0.5/go.mod h1:52INKgG+9FsXWQAbvasvl7T4AWBFewh3ThFivWjvRY8=
 github.com/klauspost/compress v1.19.1 h1:VsB4HPswih7mmZ8WleSFQ75c/Ui1M4trX5oAsJnhSlk=
 github.com/klauspost/compress v1.19.1/go.mod h1:cwPg85FWrGar70rWktvGQj8/hthj3wpl0PGDogxkrSQ=
 github.com/kylelemons/godebug v1.1.0 h1:RPNrshWIDI6G2gRW9EHilWtl7Z6Sb1BR0xunSBf0SNc=
