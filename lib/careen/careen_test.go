@@ -3,6 +3,7 @@ package careen
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -64,6 +65,12 @@ func TestCleanRules(t *testing.T) {
 		{"unknown host strips query+fragment", "https://example.com/some/path?utm_source=foo&utm_medium=bar#frag", "https://example.com/some/path"},
 		{"non-http scheme passes through", "mailto:someone@example.com?subject=hi", "mailto:someone@example.com?subject=hi"},
 		{"uppercase host matches rule", "https://WWW.YOUTUBE.COM/watch?v=abc&utm=x", "https://WWW.YOUTUBE.COM/watch?v=abc"},
+		{"port matches rule", "https://www.youtube.com:443/watch?v=abc&utm=x", "https://www.youtube.com:443/watch?v=abc"},
+		{"trailing dot matches rule", "https://www.youtube.com./watch?v=abc&utm=x", "https://www.youtube.com./watch?v=abc"},
+		{"empty query removed", "https://example.com/path?", "https://example.com/path"},
+		{"lookalike redirect host", "https://notsearch.app/path?utm=x", "https://notsearch.app/path"},
+		{"multiple kept values", "https://youtu.be/test?t=1&t=2&utm=x", "https://youtu.be/test?t=1&t=2"},
+		{"archive with port passes through", "https://archive.ph:443/https://wsj.com/article?utm=x", "https://archive.ph:443/https://wsj.com/article?utm=x"},
 
 		{"paywall apex routes through archive", "https://wsj.com/article?utm_source=foo", "https://archive.ph/https://wsj.com/article"},
 		{"paywall subdomain routes through archive", "https://www.bloomberg.com/news/x?utm=y", "https://archive.ph/https://www.bloomberg.com/news/x"},
@@ -208,23 +215,54 @@ func TestRecursionCap(t *testing.T) {
 // confirms the engine bounds the hits.
 func TestRecursionCapViaRedirectChain(t *testing.T) {
 	var hits int
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	hc := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		hits++
-		w.Header().Set("Location", r.URL.String())
-		w.WriteHeader(http.StatusFound)
-	}))
-	defer srv.Close()
+		return &http.Response{
+			StatusCode: http.StatusFound,
+			Header:     http.Header{"Location": []string{r.URL.String()}},
+			Body:       io.NopCloser(strings.NewReader("")),
+		}, nil
+	})}
 
-	c := &cleaner{http: srv.Client(), maxHops: defaultMaxHops}
-	got, err := c.followRedirect()(context.Background(), mustParse(t, srv.URL+"/loop"))
+	const raw = "https://search.app/loop"
+	got, err := Clean(t.Context(), raw, hc)
 	if err != nil {
 		t.Fatalf("followRedirect: %v", err)
 	}
-	if hits > defaultMaxHops {
-		t.Errorf("redirect loop should be capped at %d hits, got %d", defaultMaxHops, hits)
+	if hits != defaultMaxHops {
+		t.Errorf("redirect loop should stop at %d hits, got %d", defaultMaxHops, hits)
 	}
-	if !strings.HasPrefix(got, srv.URL) {
+	if got != raw {
 		t.Errorf("expected URL on the test server after cap, got %q", got)
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+type trackedBody struct {
+	*strings.Reader
+	closed bool
+}
+
+func (b *trackedBody) Close() error { b.closed = true; return nil }
+
+func TestFollowRedirectLimitsBody(t *testing.T) {
+	body := &trackedBody{Reader: strings.NewReader(strings.Repeat("x", bodyReadLimit+100))}
+	hc := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusFound,
+			Header:     http.Header{"Location": []string{"https://example.com/article?utm_source=test"}},
+			Body:       body,
+		}, nil
+	})}
+	got, err := Clean(t.Context(), "https://search.app/short", hc)
+	if err != nil || got != "https://example.com/article" {
+		t.Fatalf("Clean = %q, %v", got, err)
+	}
+	if !body.closed || body.Len() != 100 {
+		t.Errorf("body closed = %t, unread bytes = %d; want true, 100", body.closed, body.Len())
 	}
 }
 

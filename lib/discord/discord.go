@@ -1,7 +1,5 @@
-// Package discord wires linkbot to Discord via bwmarrin/discordgo:
-// a MessageCreate listener replies with sanitized URLs and a global
-// /sanitize slash command is served via InteractionCreate. Both
-// surfaces authenticate with the bot token alone.
+// Package discord replies with sanitized URLs and serves /sanitize via discordgo.
+// Both gateway events and slash commands authenticate with the bot token.
 package discord
 
 import (
@@ -11,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf16"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/gorilla/websocket"
@@ -25,6 +24,8 @@ import (
 
 // recentLookback is how many prior channel messages we scan to dedupe.
 const recentLookback = 20
+
+const maxMessageLength = 2000
 
 // closeDisallowedIntents is the gateway close code when a privileged
 // intent isn't enabled in the Developer Portal.
@@ -91,13 +92,17 @@ func sanitizeCommand() *discordgo.ApplicationCommand {
 // Bot replies to messages with sanitized URLs and serves /sanitize.
 type Bot struct {
 	session   *discordgo.Session
-	san       *sanitize.Sanitizer
+	san       sanitizer
 	ready     chan struct{}
 	readyOnce sync.Once
 }
 
+type sanitizer interface {
+	URL(context.Context, string) (string, error)
+}
+
 // New creates a Bot; call Start to open the gateway.
-func New(token string, san *sanitize.Sanitizer, base *zap.SugaredLogger) (*Bot, error) {
+func New(token string, san sanitizer) (*Bot, error) {
 	s, err := discordgo.New("Bot " + token)
 	if err != nil {
 		return nil, fmt.Errorf("discordgo: %w", err)
@@ -112,8 +117,6 @@ func New(token string, san *sanitize.Sanitizer, base *zap.SugaredLogger) (*Bot, 
 		ready:   make(chan struct{}),
 	}
 	s.AddHandler(b.onReady)
-	s.AddHandler(b.handleMessage(base))
-	s.AddHandler(b.handleInteraction(base))
 	return b, nil
 }
 
@@ -127,6 +130,8 @@ func (b *Bot) onReady(_ *discordgo.Session, _ *discordgo.Ready) {
 // Start opens the gateway and waits up to readyTimeout for READY,
 // adding a Developer Portal hint when Open() fails with close 4014.
 func (b *Bot) Start(ctx context.Context) error {
+	b.session.AddHandler(b.handleMessage(ctx))
+	b.session.AddHandler(b.handleInteraction(ctx))
 	if err := b.session.Open(); err != nil {
 		if hint := intentHint(err, b.applicationID()); hint != "" {
 			return fmt.Errorf("discord open: %s: %w", hint, err)
@@ -202,7 +207,7 @@ func intentHint(err error, appID string) string {
 // applicationID is the bot's app/client ID; pass cfg.DiscordClientID.
 func (b *Bot) RegisterCommands(ctx context.Context, applicationID string) error {
 	if applicationID == "" {
-		return fmt.Errorf("register commands: empty applicationID")
+		return errors.New("register commands: empty applicationID")
 	}
 	cmds := []*discordgo.ApplicationCommand{sanitizeCommand()}
 	if _, err := b.session.ApplicationCommandBulkOverwrite(applicationID, "", cmds, discordgo.WithContext(ctx)); err != nil {
@@ -217,12 +222,14 @@ func (b *Bot) RegisterCommands(ctx context.Context, applicationID string) error 
 
 // handleMessage returns the MessageCreate handler; bot/own messages
 // are ignored to avoid feedback loops.
-func (b *Bot) handleMessage(base *zap.SugaredLogger) func(*discordgo.Session, *discordgo.MessageCreate) {
+func (b *Bot) handleMessage(parent context.Context) func(*discordgo.Session, *discordgo.MessageCreate) {
 	return func(s *discordgo.Session, m *discordgo.MessageCreate) {
-		instOnce.Do(initInstruments)
-		if instErr != nil && base != nil {
-			base.Warnw("discord metrics unavailable", zap.Error(instErr))
-		}
+		instOnce.Do(func() {
+			initInstruments()
+			if instErr != nil {
+				logging.FromContext(parent).Warnw("discord metrics unavailable", zap.Error(instErr))
+			}
+		})
 
 		if m.Author == nil || m.Author.Bot {
 			return
@@ -233,7 +240,7 @@ func (b *Bot) handleMessage(base *zap.SugaredLogger) func(*discordgo.Session, *d
 		}
 
 		ctx, cancel := context.WithTimeout(
-			logging.NewContext(context.Background(), base,
+			logging.NewContext(parent, logging.FromContext(parent),
 				"channel_id", m.ChannelID,
 				"message_id", m.ID,
 				"author_id", m.Author.ID,
@@ -247,11 +254,16 @@ func (b *Bot) handleMessage(base *zap.SugaredLogger) func(*discordgo.Session, *d
 			return
 		}
 
-		reply := strings.Join(replies, "\n")
-		if _, err := s.ChannelMessageSendReply(m.ChannelID, reply, m.Reference()); err != nil {
-			logging.FromContext(ctx).Errorw("discord reply failed", zap.Error(err))
-			recordAction(ctx, "errored")
-			return
+		for _, reply := range splitReplies(replies) {
+			if _, err := s.ChannelMessageSendComplex(m.ChannelID, &discordgo.MessageSend{
+				Content:         reply,
+				Reference:       m.Reference(),
+				AllowedMentions: &discordgo.MessageAllowedMentions{},
+			}, discordgo.WithContext(ctx)); err != nil {
+				logging.FromContext(ctx).Errorw("discord reply failed", zap.Error(err))
+				recordAction(ctx, "errored")
+				return
+			}
 		}
 		recordAction(ctx, "replied")
 	}
@@ -259,7 +271,7 @@ func (b *Bot) handleMessage(base *zap.SugaredLogger) func(*discordgo.Session, *d
 
 // handleInteraction returns the InteractionCreate handler; only
 // /sanitize is serviced, everything else is ignored.
-func (b *Bot) handleInteraction(base *zap.SugaredLogger) func(*discordgo.Session, *discordgo.InteractionCreate) {
+func (b *Bot) handleInteraction(parent context.Context) func(*discordgo.Session, *discordgo.InteractionCreate) {
 	return func(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		if i.Type != discordgo.InteractionApplicationCommand {
 			return
@@ -284,7 +296,7 @@ func (b *Bot) handleInteraction(base *zap.SugaredLogger) func(*discordgo.Session
 		}
 
 		ctx, cancel := context.WithTimeout(
-			logging.NewContext(context.Background(), base, fields...),
+			logging.NewContext(parent, logging.FromContext(parent), fields...),
 			20*time.Second,
 		)
 		defer cancel()
@@ -292,41 +304,52 @@ func (b *Bot) handleInteraction(base *zap.SugaredLogger) func(*discordgo.Session
 
 		raw := optionString(data.Options, "url")
 		if raw == "" {
-			respondInteractionError(s, i, log, "missing required `url` option")
+			respondInteractionError(ctx, s, i, "missing required `url` option")
+			return
+		}
+
+		// Discord requires acknowledgement within three seconds, before network lookups.
+		if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{Flags: discordgo.MessageFlagsEphemeral},
+		}, discordgo.WithContext(ctx)); err != nil {
+			log.Errorw("interaction acknowledge failed", zap.Error(err))
 			return
 		}
 
 		clean, err := b.san.URL(ctx, raw)
+		if err == nil && messageLength(clean) > maxMessageLength {
+			err = errors.New("sanitized URL exceeds Discord's message limit")
+		}
 		if err != nil {
 			log.Errorw("interaction sanitize failed", "url", raw, zap.Error(err))
-			respondInteractionError(s, i, log, "could not sanitize that URL")
+			summary := "could not sanitize that URL"
+			if _, err := s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Content: &summary}, discordgo.WithContext(ctx)); err != nil {
+				log.Errorw("interaction error edit failed", zap.Error(err))
+			}
 			return
 		}
 
-		if !sanitize.Changed(raw, clean) {
-			// Acknowledge privately, then dismiss the pending response without posting.
-			if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-				Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
-				Data: &discordgo.InteractionResponseData{
-					Flags: discordgo.MessageFlagsEphemeral,
-				},
+		if sanitize.Changed(raw, clean) {
+			// Complete the private defer first; Discord otherwise treats the first
+			// followup as an edit and preserves its ephemeral flag.
+			if _, err := s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+				Content:         &clean,
+				AllowedMentions: &discordgo.MessageAllowedMentions{},
 			}, discordgo.WithContext(ctx)); err != nil {
-				log.Errorw("interaction acknowledge failed", zap.Error(err))
+				log.Errorw("interaction edit failed", zap.Error(err))
 				return
 			}
-			if err := s.InteractionResponseDelete(i.Interaction, discordgo.WithContext(ctx)); err != nil {
-				log.Errorw("interaction dismiss failed", zap.Error(err))
+			if _, err := s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+				Content:         clean,
+				AllowedMentions: &discordgo.MessageAllowedMentions{},
+			}, discordgo.WithContext(ctx)); err != nil {
+				log.Errorw("interaction respond failed", zap.Error(err))
+				return
 			}
-			return
 		}
-
-		if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseChannelMessageWithSource,
-			Data: &discordgo.InteractionResponseData{
-				Content: clean,
-			},
-		}); err != nil {
-			log.Errorw("interaction respond failed", zap.Error(err))
+		if err := s.InteractionResponseDelete(i.Interaction, discordgo.WithContext(ctx)); err != nil {
+			log.Errorw("interaction dismiss failed", zap.Error(err))
 		}
 	}
 }
@@ -354,25 +377,38 @@ func optionString(opts []*discordgo.ApplicationCommandInteractionDataOption, nam
 }
 
 // respondInteractionError sends an ephemeral error reply with summary.
-func respondInteractionError(s *discordgo.Session, i *discordgo.InteractionCreate, log *zap.SugaredLogger, summary string) {
+func respondInteractionError(ctx context.Context, s *discordgo.Session, i *discordgo.InteractionCreate, summary string) {
 	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
 			Content: summary,
 			Flags:   discordgo.MessageFlagsEphemeral,
 		},
-	})
+	}, discordgo.WithContext(ctx))
 	if err != nil {
-		log.Errorw("interaction error respond failed", zap.Error(err))
+		logging.FromContext(ctx).Errorw("interaction error respond failed", zap.Error(err))
 	}
 }
 
 // buildReplies sanitizes urls and drops unchanged or already-posted ones.
 func (b *Bot) buildReplies(ctx context.Context, s *discordgo.Session, m *discordgo.MessageCreate, urls []string) []string {
 	log := logging.FromContext(ctx)
+	seen := make(map[string]bool, len(urls))
+	for _, raw := range urls {
+		seen[raw] = true
+	}
+	processed := make(map[string]bool, len(urls))
+	var historyLoaded bool
 
 	var replies []string
 	for _, raw := range urls {
+		if ctx.Err() != nil {
+			break
+		}
+		if processed[raw] {
+			continue
+		}
+		processed[raw] = true
 		clean, err := b.san.URL(ctx, raw)
 		if err != nil {
 			log.Warnw("sanitize failed", "url", raw, zap.Error(err))
@@ -383,35 +419,67 @@ func (b *Bot) buildReplies(ctx context.Context, s *discordgo.Session, m *discord
 			recordAction(ctx, "skipped")
 			continue
 		}
-		if strings.Contains(m.Content, clean) {
-			log.Debugw("sanitized url already in source message", "url", clean)
+		if messageLength(clean) > maxMessageLength {
+			log.Warnw("sanitized URL exceeds Discord's message limit", "url", clean)
 			recordAction(ctx, "skipped")
 			continue
 		}
-		seen, err := recentlyPosted(s, m.ChannelID, m.ID, clean)
-		if err != nil {
-			log.Warnw("could not check recent messages", zap.Error(err))
-		} else if seen {
+		if seen[clean] {
+			log.Debugw("sanitized url already seen", "url", clean)
+			recordAction(ctx, "skipped")
+			continue
+		}
+		if !historyLoaded {
+			historyLoaded = true
+			msgs, err := s.ChannelMessages(m.ChannelID, recentLookback, m.ID, "", "", discordgo.WithContext(ctx))
+			if err != nil {
+				log.Warnw("could not check recent messages", zap.Error(err))
+			}
+			for _, prior := range msgs {
+				for _, posted := range sanitize.FindURLs(prior.Content) {
+					seen[posted] = true
+				}
+			}
+		}
+		if seen[clean] {
 			log.Debugw("sanitized url already in channel", "url", clean)
 			recordAction(ctx, "skipped")
 			continue
 		}
+		seen[clean] = true
 		replies = append(replies, clean)
 	}
 	return replies
 }
 
-// recentlyPosted reports whether target appears in the last
-// recentLookback messages of channelID before beforeID.
-func recentlyPosted(s *discordgo.Session, channelID, beforeID, target string) (bool, error) {
-	msgs, err := s.ChannelMessages(channelID, recentLookback, beforeID, "", "")
-	if err != nil {
-		return false, fmt.Errorf("channel messages: %w", err)
-	}
-	for _, prior := range msgs {
-		if strings.Contains(prior.Content, target) {
-			return true, nil
+// splitReplies batches whole URLs within Discord's 2,000 UTF-16-unit limit.
+func splitReplies(replies []string) []string {
+	var batches []string
+	var batch []string
+	length := 0
+	for _, reply := range replies {
+		n := messageLength(reply)
+		if n > maxMessageLength {
+			continue
 		}
+		if length+n+len(batch) > maxMessageLength {
+			batches = append(batches, strings.Join(batch, "\n"))
+			batch = batch[:0]
+			length = 0
+		}
+		batch = append(batch, reply)
+		length += n
 	}
-	return false, nil
+	if len(batch) > 0 {
+		batches = append(batches, strings.Join(batch, "\n"))
+	}
+	return batches
+}
+
+func messageLength(s string) int {
+	n := 0
+	for _, r := range s {
+		n += utf16.RuneLen(r)
+	}
+	return n
 }

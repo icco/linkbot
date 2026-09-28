@@ -13,13 +13,16 @@ Every commit and PR title **must** strictly follow [Conventional Commits](https:
 - `main.go` — Server entry point and root context shutdown handling.
 - `lib/api` — HTTP handlers and Chi v5 router.
 - `lib/careen` — URL sanitization, paywall rules, and archive mirrors.
+- `lib/sanitize` — URL extraction and routing between Careen and Odesli.
+- `lib/discord` — Gateway events, slash commands, and reply deduplication.
 - `lib/config` — Environment variable validation and startup configuration.
 
 ## Coding Conventions
 
 - **Logging**: Use `github.com/icco/gutil/logging` (Zap + Zapdriver). Loggers travel via `context.Context` (`logging.NewContext` / `logging.FromContext`). Use structured `*w` methods.
 - **Errors**: Wrap with short context: `fmt.Errorf("operation: %w", err)`. Use `writeError(r, w, status, err)` in API handlers. Wrap `defer resp.Body.Close()` in a closure checking errors.
-- **HTTP Server**: Chi v5 with middleware order: `RequestID` → `RealIP` → `loggerMiddleware` → `Recoverer` → `Timeout`. Always set explicit HTTP server timeouts. Handlers return JSON via local `writeJSON` / `writeError`.
+- **HTTP Server**: Chi v5 with middleware order: `RequestID` → `ClientIPFromRemoteAddr` → logger injection/request logging → `Recoverer` → `Timeout`. Chi's deprecated `RealIP` trusts arbitrary forwarding headers; use the peer address unless trusted proxies are explicitly configured. Always set explicit HTTP server timeouts. Handlers return JSON via local `writeJSON` / `writeError`.
+- **Discord**: Inherit the startup context in event handlers and pass it to every REST call. Acknowledge slash commands before external lookups; unchanged URLs must not produce a public message. Deduplicate exact extracted URLs, not substrings, and fetch history at most once per source message.
 - **External APIs**: Separate package per service with functional options (`WithAPIKey`, `WithHTTPClient`). Always take `context.Context` first. Limit all inbound response reads (`io.LimitReader`).
 - **Sanitization Invariants**:
   - `sanitize.FindURLs` is the single source of truth for URL extraction.
@@ -31,7 +34,8 @@ Every commit and PR title **must** strictly follow [Conventional Commits](https:
 ## Commands & Verification
 
 ```sh
-go test ./...       # Run tests
-golangci-lint run   # Lint with bodyclose, misspell, gosec, goconst, errorlint
-go build .          # Build binary
+go test -race ./... # Run tests with the race detector
+golangci-lint run   # Use v2.14.0 and the checked-in .golangci.yml
+go build .         # Build binary
+go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 ```

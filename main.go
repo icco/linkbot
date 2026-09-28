@@ -1,11 +1,11 @@
-// Command linkbot runs a Discord bot and HTTP API that sanitize URLs.
-//
 // Copyright (C) 2026 Nat Welch
 //
 // This program is free software: you can redistribute it and/or modify it under
 // the terms of the GNU General Public License as published by the Free Software
 // Foundation, either version 3 of the License, or (at your option) any later
 // version. See the LICENSE file, or <https://www.gnu.org/licenses/>.
+
+// Command linkbot runs a Discord bot and HTTP API that sanitize URLs.
 package main
 
 import (
@@ -105,7 +105,7 @@ func run() error {
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
-		WriteTimeout:      30 * time.Second,
+		WriteTimeout:      35 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
 
@@ -113,16 +113,19 @@ func run() error {
 	defer stop()
 	ctx = logging.NewContext(ctx, log)
 
-	var bot *discord.Bot
 	if cfg.DiscordToken != "" {
-		b, err := discord.New(cfg.DiscordToken, san, log)
+		bot, err := discord.New(cfg.DiscordToken, san)
 		if err != nil {
 			return fmt.Errorf("discord init: %w", err)
 		}
-		if err := b.Start(ctx); err != nil {
+		defer func() {
+			if err := bot.Close(); err != nil {
+				log.Errorw("discord close", zap.Error(err))
+			}
+		}()
+		if err := bot.Start(ctx); err != nil {
 			return fmt.Errorf("discord start: %w", err)
 		}
-		bot = b
 
 		if cfg.DiscordClientID != "" {
 			if err := bot.RegisterCommands(ctx, cfg.DiscordClientID); err != nil {
@@ -135,26 +138,34 @@ func run() error {
 		log.Warn("DISCORD_TOKEN not set; running API only")
 	}
 
+	log.Infow("http server starting", "addr", srv.Addr)
+	return serve(ctx, srv)
+}
+
+// serve propagates listener failures and drains active requests on cancellation.
+func serve(ctx context.Context, srv *http.Server) error {
+	serverErr := make(chan error, 1)
 	go func() {
-		log.Infow("http server starting", "addr", srv.Addr)
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Errorw("http server", zap.Error(err))
-			stop()
-		}
+		serverErr <- srv.ListenAndServe()
 	}()
+	select {
+	case err := <-serverErr:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return fmt.Errorf("http serve: %w", err)
+	case <-ctx.Done():
+	}
+	logging.FromContext(ctx).Info("shutting down")
 
-	<-ctx.Done()
-	log.Info("shutting down")
-
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Errorw("http shutdown", zap.Error(err))
+		return fmt.Errorf("http shutdown: %w", errors.Join(err, srv.Close()))
 	}
-	if bot != nil {
-		if err := bot.Close(); err != nil {
-			log.Errorw("discord close", zap.Error(err))
-		}
+	err := <-serverErr
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return fmt.Errorf("http serve: %w", err)
 	}
 	return nil
 }

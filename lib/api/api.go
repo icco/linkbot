@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -37,8 +39,15 @@ type Options struct {
 
 // Router returns the HTTP handler, wrapped with otelhttp (excluding /metrics).
 func Router(opts Options) http.Handler {
+	if opts.Logger == nil {
+		opts.Logger = zap.NewNop().Sugar()
+	}
 	r := chi.NewRouter()
-	r.Use(logging.Middleware(opts.Logger.Desugar()))
+	r.Use(middleware.RequestID)
+	r.Use(middleware.ClientIPFromRemoteAddr)
+	r.Use(logging.InjectLogger(opts.Logger))
+	r.Use(logging.Handler(opts.Logger.Desugar()))
+	r.Use(middleware.Recoverer)
 	r.Use(routeTag)
 	r.Use(middleware.Timeout(30 * time.Second))
 
@@ -93,12 +102,32 @@ type sanitizeResponse struct {
 func handleSanitize(san sanitizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req sanitizeRequest
-		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<14)).Decode(&req); err != nil {
-			writeError(r, w, http.StatusBadRequest, fmt.Errorf("invalid json body: %w", err))
+		dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<14))
+		err := dec.Decode(&req)
+		if err == nil {
+			var extra any
+			if err = dec.Decode(&extra); errors.Is(err, io.EOF) {
+				err = nil
+			} else if err == nil {
+				err = errors.New("expected a single JSON object")
+			}
+		}
+		if err != nil {
+			status := http.StatusBadRequest
+			var tooLarge *http.MaxBytesError
+			if errors.As(err, &tooLarge) {
+				status = http.StatusRequestEntityTooLarge
+			}
+			writeError(r, w, status, fmt.Errorf("invalid json body: %w", err))
 			return
 		}
 		if req.URL == "" {
 			writeError(r, w, http.StatusBadRequest, errors.New("url is required"))
+			return
+		}
+		u, err := url.Parse(req.URL)
+		if err != nil || u.Hostname() == "" || (u.Scheme != "http" && u.Scheme != "https") {
+			writeError(r, w, http.StatusBadRequest, errors.New("url must be an absolute http(s) URL"))
 			return
 		}
 

@@ -17,7 +17,7 @@ import (
 )
 
 // urlRE matches http(s) URLs, stopping at whitespace, quotes, and angle brackets.
-var urlRE = regexp.MustCompile(`https?://[^\s<>"'\x60]+`)
+var urlRE = regexp.MustCompile(`(?i)https?://[^\s<>"'\x60]+`)
 
 // musicHosts lists the streaming hosts Odesli understands.
 var musicHosts = []string{
@@ -58,8 +58,11 @@ func WithHTTPClient(h *http.Client) Option {
 	}
 }
 
-// New constructs a Sanitizer with a 5 s default HTTP client.
+// New constructs a Sanitizer with a 5 s Careen client and a default Odesli client if o is nil.
 func New(o *odesli.Client, opts ...Option) *Sanitizer {
+	if o == nil {
+		o = odesli.New()
+	}
 	s := &Sanitizer{
 		odesli: o,
 		hc:     &http.Client{Timeout: defaultHTTPTimeout},
@@ -73,15 +76,35 @@ func New(o *odesli.Client, opts ...Option) *Sanitizer {
 // FindURLs returns http(s) URLs in text, with trailing punctuation trimmed.
 func FindURLs(text string) []string {
 	matches := urlRE.FindAllString(text, -1)
-	out := make([]string, 0, len(matches))
-	for _, m := range matches {
-		out = append(out, strings.TrimRight(m, ".,;:!?)]}"))
+	for i, match := range matches {
+		match = strings.TrimRight(match, ".,;:!?")
+		// Keep balanced delimiters in paths, such as Wikipedia article titles.
+		for len(match) > 0 {
+			end := match[len(match)-1]
+			open := byte(0)
+			switch end {
+			case ')':
+				open = '('
+			case ']':
+				open = '['
+			case '}':
+				open = '{'
+			}
+			if open == 0 || strings.Count(match, string(open)) >= strings.Count(match, string(end)) {
+				break
+			}
+			match = strings.TrimRight(match[:len(match)-1], ".,;:!?")
+		}
+		matches[i] = match
 	}
-	return out
+	return matches
 }
 
 // URL returns a sanitized raw, or raw itself when no rewrite applies.
 func (s *Sanitizer) URL(ctx context.Context, raw string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return raw, err
+	}
 	u, err := url.Parse(raw)
 	if err != nil {
 		return raw, fmt.Errorf("parse url: %w", err)
@@ -90,10 +113,10 @@ func (s *Sanitizer) URL(ctx context.Context, raw string) (string, error) {
 		return raw, nil
 	}
 
-	if isMusicHost(u.Host) {
+	if isMusicHost(u.Hostname()) {
 		resp, err := s.odesli.Resolve(ctx, raw)
 		if err != nil {
-			return raw, err
+			return raw, fmt.Errorf("odesli resolve: %w", err)
 		}
 		return resp.PageURL, nil
 	}
@@ -112,7 +135,7 @@ func Changed(before, after string) bool {
 
 // isMusicHost reports whether host (or a subdomain) is in musicHosts.
 func isMusicHost(host string) bool {
-	host = strings.ToLower(host)
+	host = strings.TrimSuffix(strings.ToLower(host), ".")
 	return slices.ContainsFunc(musicHosts, func(suffix string) bool {
 		return host == suffix || strings.HasSuffix(host, "."+suffix)
 	})

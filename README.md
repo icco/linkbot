@@ -7,7 +7,8 @@ What "sanitize" means today:
 - **Music links** (Spotify, Apple Music, YouTube Music, Tidal, Deezer, …) are resolved through
   [Odesli / song.link](https://odesli.co/) so they open on whatever service the reader uses.
 - **Tracking params** (`utm_*`, `fbclid`, `gclid`, …) are stripped via host-aware rules ported
-  from [timball/Careen](https://github.com/timball/Careen).
+  from [timball/Careen](https://github.com/timball/Careen). Hosts without a specific rule
+  lose all query parameters and fragments; this can also remove functional parameters.
 - **Paywalled hosts** (WSJ, FT, Bloomberg, Washington Post, The Atlantic, The New Yorker, …)
   are rewritten through a randomly chosen [archive.today](https://archive.today/) mirror
   (`archive.fo`, `archive.is`, `archive.li`, `archive.md`, `archive.ph`, `archive.today`)
@@ -36,6 +37,9 @@ curl -sS -X POST http://localhost:8080/sanitize \
   -d '{"url":"https://open.spotify.com/track/1jJci4qxiYcOHhQR247rEU"}'
 ```
 
+`POST /sanitize` accepts one JSON object up to 16 KiB with an absolute HTTP(S) URL.
+Invalid input returns `400`, oversized bodies return `413`, and upstream failures return `502`.
+
 ## Environment variables
 
 | Variable                | Required | Default   | Description                                                                                                                       |
@@ -46,6 +50,8 @@ curl -sS -X POST http://localhost:8080/sanitize \
 | `ODESLI_API_KEY`    | no       | _(empty)_ | Odesli API key. The public endpoint works without one but is rate limited.              |
 
 ## Running
+
+Requires Go 1.27.1 or later.
 
 ```bash
 export DISCORD_TOKEN=...   # optional; HTTP API runs without it
@@ -75,6 +81,17 @@ including when using `/sanitize`.
 See [`AGENTS.md`](./AGENTS.md) for the conventions used by both human and AI contributors,
 including the [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) policy
 enforced on every PR.
+
+```sh
+go test -race ./...
+golangci-lint run # v2.14.0; configuration is in .golangci.yml
+go build .
+go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+```
+
+Update Go dependencies with `go get -u -t ./...` followed by `go mod tidy`.
+Dependabot checks Go modules, Docker images, and GitHub Actions weekly. The landing
+page's Web Vitals import and the CI tool versions are pinned and updated separately.
 
 ## License
 
