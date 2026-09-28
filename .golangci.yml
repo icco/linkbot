@@ -1,0 +1,21 @@
+version: "2"
+linters:
+  settings:
+    goconst:
+      ignore-tests: true
+  enable:
+    - bodyclose
+    - contextcheck
+    - copyloopvar
+    - errorlint
+    - goconst
+    - gocritic
+    - gosec
+    - intrange
+    - misspell
+    - nilerr
+    - noctx
+    - revive
+    - unconvert
+    - unparam
+    - wastedassign

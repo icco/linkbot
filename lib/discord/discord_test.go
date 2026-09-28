@@ -7,12 +7,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/gorilla/websocket"
+	"github.com/icco/gutil/logging"
 	"github.com/icco/linkbot/lib/sanitize"
 	"go.uber.org/zap"
 )
@@ -21,6 +23,12 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
 	return f(r)
+}
+
+type sanitizerFunc func(context.Context, string) (string, error)
+
+func (f sanitizerFunc) URL(ctx context.Context, raw string) (string, error) {
+	return f(ctx, raw)
 }
 
 func TestHandleInteractionOnlyPostsChangedURLs(t *testing.T) {
@@ -43,21 +51,34 @@ func TestHandleInteractionOnlyPostsChangedURLs(t *testing.T) {
 			}
 			var requests []string
 			var response discordgo.InteractionResponse
+			var followup discordgo.WebhookParams
 			s.Client = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 				requests = append(requests, r.Method+" "+r.URL.Path)
-				if r.Method == http.MethodPost {
+				if _, ok := r.Context().Deadline(); !ok {
+					t.Error("Discord request has no deadline")
+				}
+				if strings.HasSuffix(r.URL.Path, "/callback") {
 					if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&response); err != nil {
 						t.Fatalf("decode interaction response: %v", err)
 					}
+				} else if r.Method == http.MethodPost {
+					if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&followup); err != nil {
+						t.Fatalf("decode followup: %v", err)
+					}
 				}
 				return &http.Response{
-					StatusCode: http.StatusNoContent,
+					StatusCode: http.StatusOK,
 					Header:     make(http.Header),
-					Body:       io.NopCloser(strings.NewReader("")),
+					Body:       io.NopCloser(strings.NewReader(`{}`)),
 				}, nil
 			})}
-			b := &Bot{san: sanitize.New(nil)}
-			b.handleInteraction(zap.NewNop().Sugar())(s, &discordgo.InteractionCreate{
+			b := &Bot{san: sanitizerFunc(func(ctx context.Context, raw string) (string, error) {
+				if response.Type != discordgo.InteractionResponseDeferredChannelMessageWithSource {
+					t.Fatal("sanitization started before acknowledging the interaction")
+				}
+				return sanitize.New(nil).URL(ctx, raw)
+			})}
+			b.handleInteraction(logging.NewContext(t.Context(), zap.NewNop().Sugar()))(s, &discordgo.InteractionCreate{
 				Interaction: &discordgo.Interaction{
 					ID:    "interaction",
 					AppID: "app",
@@ -73,24 +94,24 @@ func TestHandleInteractionOnlyPostsChangedURLs(t *testing.T) {
 			})
 
 			wantRequests := "POST /api/v9/interactions/interaction/token/callback"
-			wantType := discordgo.InteractionResponseChannelMessageWithSource
-			var wantFlags discordgo.MessageFlags
-			if tc.want == "" {
-				wantRequests += "\nDELETE /api/v9/webhooks/app/token/messages/@original"
-				wantType = discordgo.InteractionResponseDeferredChannelMessageWithSource
-				wantFlags = discordgo.MessageFlagsEphemeral
+			if tc.want != "" {
+				wantRequests += "\nPATCH /api/v9/webhooks/app/token/messages/@original\nPOST /api/v9/webhooks/app/token"
 			}
+			wantRequests += "\nDELETE /api/v9/webhooks/app/token/messages/@original"
 			if got := strings.Join(requests, "\n"); got != wantRequests {
 				t.Errorf("requests = %q, want %q", got, wantRequests)
 			}
-			if response.Type != wantType {
-				t.Errorf("response type = %v, want %v", response.Type, wantType)
+			if response.Type != discordgo.InteractionResponseDeferredChannelMessageWithSource {
+				t.Errorf("response type = %v, want deferred response", response.Type)
 			}
 			if response.Data == nil {
 				t.Fatal("missing response data")
 			}
-			if response.Data.Content != tc.want || response.Data.Flags != wantFlags {
-				t.Errorf("response content = %q, flags = %v; want %q, %v", response.Data.Content, response.Data.Flags, tc.want, wantFlags)
+			if response.Data.Content != "" || response.Data.Flags != discordgo.MessageFlagsEphemeral {
+				t.Errorf("unexpected acknowledgement: %+v", response.Data)
+			}
+			if followup.Content != tc.want || followup.Flags != 0 {
+				t.Errorf("followup = %+v, want public content %q", followup, tc.want)
 			}
 		})
 	}
@@ -106,7 +127,7 @@ func TestHandleMessageUnchangedURLDoesNotPost(t *testing.T) {
 		return nil, errors.New("unexpected Discord request")
 	})}
 	b := &Bot{san: sanitize.New(nil)}
-	b.handleMessage(zap.NewNop().Sugar())(s, &discordgo.MessageCreate{
+	b.handleMessage(logging.NewContext(t.Context(), zap.NewNop().Sugar()))(s, &discordgo.MessageCreate{
 		Message: &discordgo.Message{
 			ID:        "message",
 			ChannelID: "channel",
@@ -114,6 +135,89 @@ func TestHandleMessageUnchangedURLDoesNotPost(t *testing.T) {
 			Content:   "This is neat https://bughunters.google.com/blog/scaling-memory-safety",
 		},
 	})
+}
+
+func TestBuildReplies(t *testing.T) {
+	t.Parallel()
+	const clean = "https://example.com/article"
+	const tracked = clean + "?utm_source=discord"
+	for _, tc := range []struct {
+		name    string
+		content string
+		history string
+		want    []string
+		lookups int
+	}{
+		{"tracking prefix", tracked, "", []string{clean}, 1},
+		{"already in source", tracked + " " + clean, "", nil, 0},
+		{"exact history match", tracked, "<" + clean + ">", nil, 1},
+		{"history prefix is not a match", tracked, clean + "/different-article", []string{clean}, 1},
+		{"duplicate source URL", tracked + " " + tracked, "", []string{clean}, 1},
+		{"duplicate result", tracked + " " + clean + "?utm_source=other", "", []string{clean}, 1},
+		{"multiple results", tracked + " https://example.com/other?utm_source=x", "", []string{clean, "https://example.com/other"}, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, err := discordgo.New("Bot test")
+			if err != nil {
+				t.Fatal(err)
+			}
+			lookups := 0
+			s.Client = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+				lookups++
+				if r.Method != http.MethodGet || r.URL.Query().Get("before") != "message" {
+					t.Errorf("unexpected history request: %s %s", r.Method, r.URL)
+				}
+				if _, ok := r.Context().Deadline(); !ok {
+					t.Error("history request has no deadline")
+				}
+				body, err := json.Marshal([]discordgo.Message{{Content: tc.history}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(string(body)))}, nil
+			})}
+			b := &Bot{san: sanitize.New(nil)}
+			ctx, cancel := context.WithTimeout(logging.NewContext(t.Context(), zap.NewNop().Sugar()), time.Second)
+			defer cancel()
+			m := &discordgo.MessageCreate{Message: &discordgo.Message{ID: "message", ChannelID: "channel", Content: tc.content}}
+			got := b.buildReplies(ctx, s, m, sanitize.FindURLs(m.Content))
+			if !slices.Equal(got, tc.want) || lookups != tc.lookups {
+				t.Errorf("replies = %q, lookups = %d; want %q, %d", got, lookups, tc.want, tc.lookups)
+			}
+		})
+	}
+}
+
+func TestMessageContextCancellation(t *testing.T) {
+	parent, cancel := context.WithCancel(logging.NewContext(t.Context(), zap.NewNop().Sugar()))
+	defer cancel()
+	b := &Bot{san: sanitizerFunc(func(ctx context.Context, raw string) (string, error) {
+		cancel()
+		if !errors.Is(ctx.Err(), context.Canceled) {
+			t.Fatal("message work did not inherit shutdown cancellation")
+		}
+		return raw, ctx.Err()
+	})}
+	b.handleMessage(parent)(nil, &discordgo.MessageCreate{Message: &discordgo.Message{
+		Author: &discordgo.User{ID: "user"}, Content: "https://example.com/?utm_source=test",
+	}})
+}
+
+func TestSplitReplies(t *testing.T) {
+	t.Parallel()
+	a := "https://example.com/" + strings.Repeat("a", 1100)
+	b := "https://example.com/" + strings.Repeat("😀", 550)
+	tooLong := "https://example.com/" + strings.Repeat("x", maxMessageLength)
+	got := splitReplies([]string{a, b, tooLong, "https://example.com/short"})
+	want := []string{a, b + "\nhttps://example.com/short"}
+	if !slices.Equal(got, want) {
+		t.Errorf("batches = %q, want %q", got, want)
+	}
+	for _, batch := range got {
+		if messageLength(batch) > maxMessageLength {
+			t.Errorf("oversize batch: %d", messageLength(batch))
+		}
+	}
 }
 
 // TestWaitForReady_Fires checks that an already-closed ready returns nil.

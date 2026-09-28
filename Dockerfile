@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.27-alpine AS builder
+FROM golang:1.27.1-alpine AS builder
 
 ENV GOPROXY="https://proxy.golang.org"
 ENV CGO_ENABLED=0
@@ -10,16 +10,15 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN go build -ldflags="-s -w" -o /linkbot .
+RUN go build -trimpath -ldflags="-s -w" -o /linkbot .
 
 # Final stage
-FROM alpine:3.24
+FROM alpine:3.24.2
 
 LABEL org.opencontainers.image.source=https://github.com/icco/linkbot
 LABEL org.opencontainers.image.description="Better links in your life"
 
-RUN apk add --no-cache ca-certificates tzdata
-RUN adduser -S -u 1001 app
+RUN apk add --no-cache ca-certificates tzdata && adduser -S -u 1001 app
 
 WORKDIR /app
 COPY --from=builder --chown=app /linkbot .

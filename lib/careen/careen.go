@@ -10,7 +10,6 @@ package careen
 import (
 	"context"
 	"crypto/rand"
-	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -54,22 +53,22 @@ var pickArchiveMirror = func() string {
 // paywallHosts triggers archive routing in clean. NYT is intentionally
 // excluded: its rule preserves the official unlocked_article_code
 // gift-link param, so archiving on top would be redundant.
-var paywallHosts = []*regexp.Regexp{
-	regexp.MustCompile(`(^|\.)bloomberg\.com$`),
-	regexp.MustCompile(`(^|\.)bostonglobe\.com$`),
-	regexp.MustCompile(`(^|\.)businessinsider\.com$`),
-	regexp.MustCompile(`(^|\.)economist\.com$`),
-	regexp.MustCompile(`(^|\.)ft\.com$`),
-	regexp.MustCompile(`(^|\.)latimes\.com$`),
-	regexp.MustCompile(`(^|\.)medium\.com$`),
-	regexp.MustCompile(`(^|\.)newyorker\.com$`),
-	regexp.MustCompile(`(^|\.)nymag\.com$`),
-	regexp.MustCompile(`(^|\.)telegraph\.co\.uk$`),
-	regexp.MustCompile(`(^|\.)theatlantic\.com$`),
-	regexp.MustCompile(`(^|\.)thetimes\.co\.uk$`),
-	regexp.MustCompile(`(^|\.)washingtonpost\.com$`),
-	regexp.MustCompile(`(^|\.)wired\.com$`),
-	regexp.MustCompile(`(^|\.)wsj\.com$`),
+var paywallHosts = []string{
+	"bloomberg.com",
+	"bostonglobe.com",
+	"businessinsider.com",
+	"economist.com",
+	"ft.com",
+	"latimes.com",
+	"medium.com",
+	"newyorker.com",
+	"nymag.com",
+	"telegraph.co.uk",
+	"theatlantic.com",
+	"thetimes.co.uk",
+	"washingtonpost.com",
+	"wired.com",
+	"wsj.com",
 }
 
 // strategy produces a cleaned URL for u.
@@ -115,7 +114,7 @@ func init() {
 		{pattern: regexp.MustCompile(`^apple\.news$`), make: func(c *cleaner) strategy { return c.appleNews() }},
 		{pattern: regexp.MustCompile(`(^|\.)nytimes\.com$`), make: static(keepSpecificParams([]string{"unlocked_article_code"}, nil))},
 		{pattern: regexp.MustCompile(`^admin\.cloud\.microsoft$`), make: static(keepAll), noArchive: true},
-		{pattern: regexp.MustCompile(`search\.app$`), make: func(c *cleaner) strategy { return c.followRedirect() }},
+		{pattern: regexp.MustCompile(`(^|\.)search\.app$`), make: func(c *cleaner) strategy { return c.followRedirect() }},
 	}
 }
 
@@ -145,7 +144,7 @@ func (c *cleaner) clean(ctx context.Context, u *url.URL) (string, error) {
 	if u.Scheme != "http" && u.Scheme != "https" {
 		return u.String(), nil
 	}
-	host := strings.ToLower(u.Host)
+	host := strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
 	if slices.Contains(archiveMirrors, host) {
 		return u.String(), nil
 	}
@@ -180,10 +179,10 @@ func dispatch(c *cleaner, host string) (strategy, bool) {
 	return stripAll, false
 }
 
-// isPaywalled reports whether host matches any paywallHosts pattern.
+// isPaywalled reports whether host is a paywalled domain or its subdomain.
 func isPaywalled(host string) bool {
-	return slices.ContainsFunc(paywallHosts, func(re *regexp.Regexp) bool {
-		return re.MatchString(host)
+	return slices.ContainsFunc(paywallHosts, func(domain string) bool {
+		return host == domain || strings.HasSuffix(host, "."+domain)
 	})
 }
 
@@ -191,6 +190,7 @@ func isPaywalled(host string) bool {
 func stripAll(_ context.Context, u *url.URL) (string, error) {
 	out := *u
 	out.RawQuery = ""
+	out.ForceQuery = false
 	out.Fragment = ""
 	return out.String(), nil
 }
@@ -204,12 +204,10 @@ func keepAll(_ context.Context, u *url.URL) (string, error) {
 func keepSpecificParams(keep []string, extra map[string]string) strategy {
 	return func(_ context.Context, u *url.URL) (string, error) {
 		out := url.Values{}
-		for k, vs := range u.Query() {
-			if !slices.Contains(keep, k) {
-				continue
-			}
-			for _, v := range vs {
-				out.Add(k, v)
+		query := u.Query()
+		for _, k := range keep {
+			if vs, ok := query[k]; ok {
+				out[k] = vs
 			}
 		}
 		for k, v := range extra {
@@ -217,6 +215,7 @@ func keepSpecificParams(keep []string, extra map[string]string) strategy {
 		}
 		next := *u
 		next.RawQuery = out.Encode()
+		next.ForceQuery = false
 		next.Fragment = ""
 		return next.String(), nil
 	}
@@ -237,6 +236,7 @@ func amazonStrategy(_ context.Context, u *url.URL) (string, error) {
 		next.Path = next.Path[:i]
 	}
 	next.RawQuery = ""
+	next.ForceQuery = false
 	next.Fragment = ""
 	return next.String(), nil
 }
@@ -292,7 +292,7 @@ func (c *cleaner) followRedirect() strategy {
 				log.Warnw("careen follow: close body", zap.Error(err))
 			}
 		}()
-		if _, err := io.Copy(io.Discard, resp.Body); err != nil && !errors.Is(err, io.EOF) {
+		if _, err := io.Copy(io.Discard, io.LimitReader(resp.Body, bodyReadLimit)); err != nil {
 			log.Debugw("careen follow: drain body", zap.Error(err))
 		}
 

@@ -9,51 +9,27 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: write
     steps:
       - uses: actions/checkout@v7
-      - uses: reviewdog/action-yamllint@v1
-        with:
-          github_token: ${{ secrets.github_token }}
-          reporter: github-pr-check
+      - name: Lint YAML
+        run: pipx run --spec yamllint==1.38.0 yamllint .
   format:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
     steps:
       - uses: actions/checkout@v7
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          fetch-depth: 0
       - name: Install yq
         uses: dcarbone/install-yq-action@v1.3.1
-      - name: Format YAML files with yq
-        run: |
-          # Format YAML in place. Skip vendor and node_modules in case they appear later.
-          find . \( -name "*.yml" -o -name "*.yaml" \) \
-            -not -path "./vendor/*" \
-            -not -path "./node_modules/*" \
-            -not -path "./.git/*" | while read -r file; do
-            echo "Formatting $file"
-            yq -iP '.' "$file"
-          done
-      - name: Format JSON files with yq
-        run: |
-          # yq formats JSON with -o=json. go.sum is text, not JSON, so glob only *.json.
-          find . -name "*.json" \
-            -not -path "./vendor/*" \
-            -not -path "./node_modules/*" \
-            -not -path "./.git/*" | while read -r file; do
-            echo "Formatting $file"
-            yq -iP -o=json '.' "$file"
-          done
-      - name: Commit formatting changes
-        if: github.event_name == 'pull_request'
-        uses: stefanzweifel/git-auto-commit-action@v7
         with:
-          commit_message: 'style: format YAML and JSON with yq'
-          # The default GITHUB_TOKEN cannot edit files under .github/workflows.
-          file_pattern: '*.yml *.yaml *.json :!.github/workflows/*'
-          commit_author: GitHub Actions <actions@github.com>
-          commit_user_name: github-actions[bot]
-          commit_user_email: github-actions[bot]@users.noreply.github.com
+          version: v4.53.6
+      - name: Format YAML and JSON
+        run: |
+          git ls-files -z '*.yml' '*.yaml' '*.json' | while IFS= read -r -d '' file; do
+            case "$file" in
+              *.json) yq -iP -o=json '.' "$file" ;;
+              *) yq -iP '.' "$file" ;;
+            esac
+          done
+      - name: Check formatting
+        run: git diff --exit-code

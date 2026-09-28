@@ -3,6 +3,8 @@ package api_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"html"
 	"io"
 	"net/http"
@@ -38,8 +40,10 @@ func TestMetricsEndpoint(t *testing.T) {
 		t.Fatalf("otelprom.New: %v", err)
 	}
 	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(exporter))
+	previous := otel.GetMeterProvider()
 	otel.SetMeterProvider(mp)
 	t.Cleanup(func() {
+		otel.SetMeterProvider(previous)
 		if err := mp.Shutdown(context.Background()); err != nil {
 			t.Logf("meter provider shutdown: %v", err)
 		}
@@ -94,6 +98,84 @@ func TestMetricsEndpoint(t *testing.T) {
 		if !strings.Contains(text, want) {
 			t.Errorf("metrics body missing %q\nbody:\n%s", want, text)
 		}
+	}
+}
+
+type sanitizerFunc func(context.Context, string) (string, error)
+
+func (f sanitizerFunc) URL(ctx context.Context, raw string) (string, error) {
+	return f(ctx, raw)
+}
+
+func TestSanitize(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name      string
+		body      string
+		status    int
+		wantCalls int
+	}{
+		{"valid", `{"url":"https://example.com/?utm_source=test"}`, http.StatusOK, 1},
+		{"whitespace suffix", "{\"url\":\"https://example.com/\"}\n \t", http.StatusOK, 1},
+		{"empty", "", http.StatusBadRequest, 0},
+		{"missing url", `{}`, http.StatusBadRequest, 0},
+		{"null", `null`, http.StatusBadRequest, 0},
+		{"invalid json", `{`, http.StatusBadRequest, 0},
+		{"wrong type", `{"url":1}`, http.StatusBadRequest, 0},
+		{"second object", `{"url":"https://example.com/"}{}`, http.StatusBadRequest, 0},
+		{"trailing junk", `{"url":"https://example.com/"}junk`, http.StatusBadRequest, 0},
+		{"relative url", `{"url":"/path"}`, http.StatusBadRequest, 0},
+		{"missing host", `{"url":"https:///path"}`, http.StatusBadRequest, 0},
+		{"non-http url", `{"url":"file:///etc/passwd"}`, http.StatusBadRequest, 0},
+		{"invalid escape", `{"url":"https://example.com/%zz"}`, http.StatusBadRequest, 0},
+		{"oversize url", `{"url":"https://example.com/` + strings.Repeat("x", 1<<14) + `"}`, http.StatusRequestEntityTooLarge, 0},
+		{"oversize suffix", `{"url":"https://example.com/"}` + strings.Repeat(" ", 1<<14), http.StatusRequestEntityTooLarge, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			calls := 0
+			h := api.Router(api.Options{Sanitizer: sanitizerFunc(func(context.Context, string) (string, error) {
+				calls++
+				return "https://example.com/", nil
+			})})
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/sanitize", strings.NewReader(tc.body)))
+			if w.Code != tc.status || calls != tc.wantCalls {
+				t.Fatalf("status = %d, calls = %d; want %d, %d; body: %s", w.Code, calls, tc.status, tc.wantCalls, w.Body)
+			}
+			var body map[string]any
+			if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+				t.Fatalf("response is not JSON: %v", err)
+			}
+			if tc.status == http.StatusOK {
+				if body["sanitized"] != "https://example.com/" {
+					t.Errorf("unexpected result: %v", body)
+				}
+			} else if body["error"] == nil {
+				t.Errorf("missing error: %v", body)
+			}
+		})
+	}
+}
+
+func TestSanitizeFailure(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name   string
+		status int
+		san    sanitizerFunc
+	}{
+		{"upstream error", http.StatusBadGateway, func(context.Context, string) (string, error) { return "", errors.New("upstream unavailable") }},
+		{"panic recovery", http.StatusInternalServerError, func(context.Context, string) (string, error) { panic("test panic") }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := api.Router(api.Options{Sanitizer: tc.san})
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/sanitize", strings.NewReader(`{"url":"https://example.com/"}`)))
+			if w.Code != tc.status {
+				t.Errorf("status = %d, want %d", w.Code, tc.status)
+			}
+		})
 	}
 }
 

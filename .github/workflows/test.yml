@@ -1,6 +1,11 @@
 name: Test Go
 on:
-  - push
+  push:
+    branches:
+      - main
+  pull_request:
+permissions:
+  contents: read
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -10,9 +15,17 @@ jobs:
         uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-      - name: Install dependencies
-        run: go get .
+      - name: Verify dependencies
+        run: |
+          go mod download
+          go mod verify
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+      - name: Check Go formatting
+        run: test -z "$(gofmt -l .)"
       - name: Build
         run: go build -v ./...
       - name: Test with the Go CLI
-        run: go test -v ./...
+        run: go test -race -cover ./...
+      - name: Check vulnerabilities
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
