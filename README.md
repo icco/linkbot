@@ -67,6 +67,9 @@ docker run --rm -p 8080:8080 -e DISCORD_TOKEN=... linkbot
 5. Optional: set `DISCORD_CLIENT_ID` to register the `/sanitize` slash command at startup
    (via discordgo's `ApplicationCommandBulkOverwrite`, authenticated by the bot token).
 
+The bot only posts when sanitization changes a URL. Unchanged links produce no reply,
+including when using `/sanitize`.
+
 ## Contributing
 
 See [`AGENTS.md`](./AGENTS.md) for the conventions used by both human and AI contributors,
