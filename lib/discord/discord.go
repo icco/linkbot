@@ -303,17 +303,27 @@ func (b *Bot) handleInteraction(base *zap.SugaredLogger) func(*discordgo.Session
 			return
 		}
 
-		var content string
-		if sanitize.Changed(raw, clean) {
-			content = clean
-		} else {
-			content = "No sanitization needed: " + raw
+		if !sanitize.Changed(raw, clean) {
+			// Acknowledge privately, then dismiss the pending response without posting.
+			if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+				Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+				Data: &discordgo.InteractionResponseData{
+					Flags: discordgo.MessageFlagsEphemeral,
+				},
+			}, discordgo.WithContext(ctx)); err != nil {
+				log.Errorw("interaction acknowledge failed", zap.Error(err))
+				return
+			}
+			if err := s.InteractionResponseDelete(i.Interaction, discordgo.WithContext(ctx)); err != nil {
+				log.Errorw("interaction dismiss failed", zap.Error(err))
+			}
+			return
 		}
 
 		if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
 			Data: &discordgo.InteractionResponseData{
-				Content: content,
+				Content: clean,
 			},
 		}); err != nil {
 			log.Errorw("interaction respond failed", zap.Error(err))

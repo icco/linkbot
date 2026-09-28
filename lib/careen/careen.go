@@ -101,8 +101,8 @@ func init() {
 			make:    static(keepSpecificParams([]string{"tab", "gid", "usp", "authuser"}, nil)),
 		},
 		{
-			pattern: regexp.MustCompile(`(^|\.)google\.(com|ad|ae|al|am|as|at|az|ba|be|bf|bg|bi|bj|bs|bt|by|ca|cd|cf|cg|ch|ci|cl|cm|cn|cv|cz|de|dj|dk|dm|dz|ee|es|fi|fm|fr|ga|ge|gg|gl|gm|gp|gr|hn|hr|ht|hu|ie|im|iq|is|it|je|jo|kg|ki|kz|la|li|lk|lt|lu|lv|md|me|mg|mk|ml|mn|ms|mu|mv|mw|ne|nl|no|nr|nu|pl|pn|ps|pt|ro|rs|ru|rw|sc|se|sh|si|sk|sm|sn|so|sr|st|td|tg|tk|tl|tm|tn|to|tr|tt|ua|vg|vu|ws)(\.[a-z]{2,3})?$`),
-			make:    static(keepSpecificParams([]string{"q"}, map[string]string{"udm": "14", "pws": "0"})),
+			pattern: regexp.MustCompile(`^(www\.)?google\.(com|ad|ae|al|am|as|at|az|ba|be|bf|bg|bi|bj|bs|bt|by|ca|cd|cf|cg|ch|ci|cl|cm|cn|cv|cz|de|dj|dk|dm|dz|ee|es|fi|fm|fr|ga|ge|gg|gl|gm|gp|gr|hn|hr|ht|hu|ie|im|iq|is|it|je|jo|kg|ki|kz|la|li|lk|lt|lu|lv|md|me|mg|mk|ml|mn|ms|mu|mv|mw|ne|nl|no|nr|nu|pl|pn|ps|pt|ro|rs|ru|rw|sc|se|sh|si|sk|sm|sn|so|sr|st|td|tg|tk|tl|tm|tn|to|tr|tt|ua|vg|vu|ws)(\.[a-z]{2,3})?$`),
+			make:    static(googleSearchStrategy),
 		},
 		{
 			pattern: regexp.MustCompile(`(^|\.)amazon\.(com|ca|com\.mx|com\.br|co\.uk|de|fr|it|es|nl|se|pl|com\.tr|ae|sa|eg|in|com\.au|co\.jp)(\.[a-z]{2,3})?$`),
@@ -220,6 +220,14 @@ func keepSpecificParams(keep []string, extra map[string]string) strategy {
 		next.Fragment = ""
 		return next.String(), nil
 	}
+}
+
+// googleSearchStrategy adds search preferences only to URLs with a search query.
+func googleSearchStrategy(ctx context.Context, u *url.URL) (string, error) {
+	if (u.Path != "/search" && u.Path != "/" && u.Path != "") || u.Query().Get("q") == "" {
+		return stripAll(ctx, u)
+	}
+	return keepSpecificParams([]string{"q"}, map[string]string{"udm": "14", "pws": "0"})(ctx, u)
 }
 
 // amazonStrategy drops the /ref=… path tail and the query.

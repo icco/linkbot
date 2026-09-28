@@ -44,6 +44,13 @@ func TestCleanRules(t *testing.T) {
 	}{
 		{"google search", "https://www.google.com/search?q=hello+world&utm_source=bar&pws=1", "https://www.google.com/search?pws=0&q=hello+world&udm=14"},
 		{"google ccTLD com.au", "https://www.google.com.au/search?q=foo&hl=en", "https://www.google.com.au/search?pws=0&q=foo&udm=14"},
+		{"google apex search", "https://google.com/search?q=foo", "https://google.com/search?pws=0&q=foo&udm=14"},
+		{"google root search", "https://www.google.com/?q=foo", "https://www.google.com/?pws=0&q=foo&udm=14"},
+		{"google homepage", "https://www.google.com/", "https://www.google.com/"},
+		{"google non-search path", "https://www.google.com/about/", "https://www.google.com/about/"},
+		{"google bughunters blog unchanged", "https://bughunters.google.com/blog/scaling-memory-safety", "https://bughunters.google.com/blog/scaling-memory-safety"},
+		{"google bughunters tracking stripped", "https://bughunters.google.com/blog/scaling-memory-safety?utm_source=discord", "https://bughunters.google.com/blog/scaling-memory-safety"},
+		{"google subdomain search", "https://bughunters.google.com/search?q=foo", "https://bughunters.google.com/search"},
 		{"google co.uk falls through (co not in TLD list)", "https://www.google.co.uk/search?q=foo&hl=en", "https://www.google.co.uk/search"},
 		{"google workspace", "https://docs.google.com/document/d/abc?tab=t.0&authuser=1&utm=x", "https://docs.google.com/document/d/abc?authuser=1&tab=t.0"},
 		{"amazon ref tail", "https://www.amazon.com/Some-Product/dp/B000TEST/ref=cm_sw_r_other?utm=x&pf=1", "https://www.amazon.com/Some-Product/dp/B000TEST"},

@@ -2,15 +2,119 @@ package discord
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/gorilla/websocket"
+	"github.com/icco/linkbot/lib/sanitize"
+	"go.uber.org/zap"
 )
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
+	return f(r)
+}
+
+func TestHandleInteractionOnlyPostsChangedURLs(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{name: "unchanged", raw: "https://example.com/article"},
+		{name: "already archived", raw: "https://archive.ph/example"},
+		{name: "changed", raw: "https://example.com/article?utm_source=discord", want: "https://example.com/article"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			s, err := discordgo.New("Bot test")
+			if err != nil {
+				t.Fatalf("discord session: %v", err)
+			}
+			var requests []string
+			var response discordgo.InteractionResponse
+			s.Client = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+				requests = append(requests, r.Method+" "+r.URL.Path)
+				if r.Method == http.MethodPost {
+					if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&response); err != nil {
+						t.Fatalf("decode interaction response: %v", err)
+					}
+				}
+				return &http.Response{
+					StatusCode: http.StatusNoContent,
+					Header:     make(http.Header),
+					Body:       io.NopCloser(strings.NewReader("")),
+				}, nil
+			})}
+			b := &Bot{san: sanitize.New(nil)}
+			b.handleInteraction(zap.NewNop().Sugar())(s, &discordgo.InteractionCreate{
+				Interaction: &discordgo.Interaction{
+					ID:    "interaction",
+					AppID: "app",
+					Token: "token",
+					Type:  discordgo.InteractionApplicationCommand,
+					Data: discordgo.ApplicationCommandInteractionData{
+						Name: sanitizeCommandName,
+						Options: []*discordgo.ApplicationCommandInteractionDataOption{
+							{Name: "url", Type: discordgo.ApplicationCommandOptionString, Value: tc.raw},
+						},
+					},
+				},
+			})
+
+			wantRequests := "POST /api/v9/interactions/interaction/token/callback"
+			wantType := discordgo.InteractionResponseChannelMessageWithSource
+			var wantFlags discordgo.MessageFlags
+			if tc.want == "" {
+				wantRequests += "\nDELETE /api/v9/webhooks/app/token/messages/@original"
+				wantType = discordgo.InteractionResponseDeferredChannelMessageWithSource
+				wantFlags = discordgo.MessageFlagsEphemeral
+			}
+			if got := strings.Join(requests, "\n"); got != wantRequests {
+				t.Errorf("requests = %q, want %q", got, wantRequests)
+			}
+			if response.Type != wantType {
+				t.Errorf("response type = %v, want %v", response.Type, wantType)
+			}
+			if response.Data == nil {
+				t.Fatal("missing response data")
+			}
+			if response.Data.Content != tc.want || response.Data.Flags != wantFlags {
+				t.Errorf("response content = %q, flags = %v; want %q, %v", response.Data.Content, response.Data.Flags, tc.want, wantFlags)
+			}
+		})
+	}
+}
+
+func TestHandleMessageUnchangedURLDoesNotPost(t *testing.T) {
+	s, err := discordgo.New("Bot test")
+	if err != nil {
+		t.Fatalf("discord session: %v", err)
+	}
+	s.Client = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		t.Fatalf("unexpected Discord request: %s %s", r.Method, r.URL)
+		return nil, errors.New("unexpected Discord request")
+	})}
+	b := &Bot{san: sanitize.New(nil)}
+	b.handleMessage(zap.NewNop().Sugar())(s, &discordgo.MessageCreate{
+		Message: &discordgo.Message{
+			ID:        "message",
+			ChannelID: "channel",
+			Author:    &discordgo.User{ID: "user"},
+			Content:   "This is neat https://bughunters.google.com/blog/scaling-memory-safety",
+		},
+	})
+}
 
 // TestWaitForReady_Fires checks that an already-closed ready returns nil.
 func TestWaitForReady_Fires(t *testing.T) {
