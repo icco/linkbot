@@ -13,12 +13,12 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	"github.com/icco/gutil/logging"
+	"go.icco.me/gutil/logging"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 	"go.uber.org/zap"
 
-	"github.com/icco/linkbot/lib/sanitize"
+	"go.icco.me/linkbot/lib/sanitize"
 )
 
 // serverName is the otelhttp span/metric scope.

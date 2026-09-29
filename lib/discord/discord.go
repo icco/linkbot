@@ -13,13 +13,13 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/gorilla/websocket"
-	"github.com/icco/gutil/logging"
+	"go.icco.me/gutil/logging"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/zap"
 
-	"github.com/icco/linkbot/lib/sanitize"
+	"go.icco.me/linkbot/lib/sanitize"
 )
 
 // recentLookback is how many prior channel messages we scan to dedupe.

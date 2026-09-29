@@ -19,20 +19,20 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/icco/gutil/logging"
-	"github.com/icco/odesli"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.icco.me/gutil/logging"
+	"go.icco.me/odesli"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	otelprom "go.opentelemetry.io/otel/exporters/prometheus"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.uber.org/zap"
 
-	"github.com/icco/linkbot/lib/api"
-	"github.com/icco/linkbot/lib/config"
-	"github.com/icco/linkbot/lib/discord"
-	"github.com/icco/linkbot/lib/sanitize"
+	"go.icco.me/linkbot/lib/api"
+	"go.icco.me/linkbot/lib/config"
+	"go.icco.me/linkbot/lib/discord"
+	"go.icco.me/linkbot/lib/sanitize"
 )
 
 // odesliUserAgent identifies linkbot to Odesli. icco/odesli defaults to naming

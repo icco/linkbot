@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/icco/gutil/logging"
 	"github.com/unrolled/secure"
+	"go.icco.me/gutil/logging"
 	"go.uber.org/zap"
 )
 

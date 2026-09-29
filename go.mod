@@ -1,4 +1,4 @@
-module github.com/icco/linkbot
+module go.icco.me/linkbot
 
 go 1.27.1
 
@@ -6,10 +6,10 @@ require (
 	github.com/bwmarrin/discordgo v0.29.0
 	github.com/go-chi/chi/v5 v5.3.2
 	github.com/gorilla/websocket v1.5.3
-	github.com/icco/gutil v1.0.26
-	github.com/icco/odesli v1.0.5
 	github.com/prometheus/client_golang v1.24.1
 	github.com/unrolled/secure v1.17.0
+	go.icco.me/gutil v1.0.27-0.20260929105600-f3e11752b837
+	go.icco.me/odesli v1.0.6-0.20260929110934-ee28d68e3aad
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.71.0
 	go.opentelemetry.io/otel v1.46.0
 	go.opentelemetry.io/otel/exporters/prometheus v0.68.0
