@@ -20,7 +20,7 @@ What "sanitize" means today:
 
 For implementation details see the godoc for each package under `lib/`, especially `lib/sanitize`
 and `lib/careen`: <https://pkg.go.dev/go.icco.me/linkbot>. The Odesli client lives in its own
-repo: <https://pkg.go.dev/github.com/icco/odesli>.
+repo: <https://pkg.go.dev/go.icco.me/odesli>.
 
 ## API
 

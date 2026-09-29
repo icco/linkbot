@@ -19,7 +19,7 @@ Every commit and PR title **must** strictly follow [Conventional Commits](https:
 
 ## Coding Conventions
 
-- **Logging**: Use `github.com/icco/gutil/logging` (Zap + Zapdriver). Loggers travel via `context.Context` (`logging.NewContext` / `logging.FromContext`). Use structured `*w` methods.
+- **Logging**: Use `go.icco.me/gutil/logging` (Zap + Zapdriver). Loggers travel via `context.Context` (`logging.NewContext` / `logging.FromContext`). Use structured `*w` methods.
 - **Errors**: Wrap with short context: `fmt.Errorf("operation: %w", err)`. Use `writeError(r, w, status, err)` in API handlers. Wrap `defer resp.Body.Close()` in a closure checking errors.
 - **HTTP Server**: Chi v5 with middleware order: `RequestID` → `ClientIPFromRemoteAddr` → logger injection/request logging → `Recoverer` → `Timeout`. Chi's deprecated `RealIP` trusts arbitrary forwarding headers; use the peer address unless trusted proxies are explicitly configured. Always set explicit HTTP server timeouts. Handlers return JSON via local `writeJSON` / `writeError`.
 - **Discord**: Inherit the startup context in event handlers and pass it to every REST call. Acknowledge slash commands before external lookups; unchanged URLs must not produce a public message. Deduplicate exact extracted URLs, not substrings, and fetch history at most once per source message.

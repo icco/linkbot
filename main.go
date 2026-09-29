@@ -19,10 +19,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/icco/gutil/logging"
-	"github.com/icco/odesli"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.icco.me/gutil/logging"
+	"go.icco.me/odesli"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	otelprom "go.opentelemetry.io/otel/exporters/prometheus"

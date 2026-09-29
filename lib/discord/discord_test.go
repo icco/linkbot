@@ -14,7 +14,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/gorilla/websocket"
-	"github.com/icco/gutil/logging"
+	"go.icco.me/gutil/logging"
 	"go.icco.me/linkbot/lib/sanitize"
 	"go.uber.org/zap"
 )

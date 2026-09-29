@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/icco/odesli"
+	"go.icco.me/odesli"
 )
 
 // TestNewDefaultsHTTPClient confirms New attaches a 5 s timeout client
