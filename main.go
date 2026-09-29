@@ -29,10 +29,10 @@ import (
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.uber.org/zap"
 
-	"github.com/icco/linkbot/lib/api"
-	"github.com/icco/linkbot/lib/config"
-	"github.com/icco/linkbot/lib/discord"
-	"github.com/icco/linkbot/lib/sanitize"
+	"go.icco.me/linkbot/lib/api"
+	"go.icco.me/linkbot/lib/config"
+	"go.icco.me/linkbot/lib/discord"
+	"go.icco.me/linkbot/lib/sanitize"
 )
 
 // odesliUserAgent identifies linkbot to Odesli. icco/odesli defaults to naming

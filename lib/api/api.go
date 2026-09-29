@@ -18,7 +18,7 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 	"go.uber.org/zap"
 
-	"github.com/icco/linkbot/lib/sanitize"
+	"go.icco.me/linkbot/lib/sanitize"
 )
 
 // serverName is the otelhttp span/metric scope.

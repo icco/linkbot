@@ -20,7 +20,7 @@ import (
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.uber.org/zap"
 
-	"github.com/icco/linkbot/lib/api"
+	"go.icco.me/linkbot/lib/api"
 )
 
 // stubSanitizer is a no-op for /sanitize so the route returns 200.

@@ -19,7 +19,7 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/zap"
 
-	"github.com/icco/linkbot/lib/sanitize"
+	"go.icco.me/linkbot/lib/sanitize"
 )
 
 // recentLookback is how many prior channel messages we scan to dedupe.

@@ -1,4 +1,4 @@
-module github.com/icco/linkbot
+module go.icco.me/linkbot
 
 go 1.27.1
 
