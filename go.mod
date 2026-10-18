@@ -4,7 +4,7 @@ go 1.27.2
 
 require (
 	github.com/bwmarrin/discordgo v0.29.0
-	github.com/go-chi/chi/v5 v5.4.0
+	github.com/go-chi/chi/v5 v5.5.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/prometheus/client_golang v1.25.0
 	github.com/unrolled/secure v1.17.0
