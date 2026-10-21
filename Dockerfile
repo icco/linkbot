@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.27.2-alpine AS builder
+FROM golang:1.27.3-alpine AS builder
 
 ENV GOPROXY="https://proxy.golang.org"
 ENV CGO_ENABLED=0
@@ -18,7 +18,7 @@ FROM alpine:3.24.2
 LABEL org.opencontainers.image.source=https://github.com/icco/linkbot
 LABEL org.opencontainers.image.description="Better links in your life"
 
-RUN apk add --no-cache ca-certificates tzdata && adduser -S -u 1001 app
+RUN apk upgrade --no-cache ca-certificates ca-certificates-bundle && apk add --no-cache ca-certificates tzdata && adduser -S -u 1001 app
 
 WORKDIR /app
 COPY --from=builder --chown=app /linkbot .
