@@ -8,7 +8,7 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/prometheus/client_golang v1.25.0
 	github.com/unrolled/secure v1.17.0
-	go.icco.me/gutil v1.0.28
+	go.icco.me/gutil v1.0.30
 	go.icco.me/odesli v1.0.6
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.72.0
 	go.opentelemetry.io/otel v1.47.0
