@@ -13,7 +13,7 @@ COPY . .
 RUN go build -trimpath -ldflags="-s -w" -o /linkbot .
 
 # Final stage
-FROM alpine:3.24.2
+FROM alpine:3.24.3
 
 LABEL org.opencontainers.image.source=https://github.com/icco/linkbot
 LABEL org.opencontainers.image.description="Better links in your life"
