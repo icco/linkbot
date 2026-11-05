@@ -22,7 +22,7 @@ jobs:
       - name: Install yq
         uses: dcarbone/install-yq-action@4075b4dca348d74bd83f2bf82d30f25d7c54539b # v1.3.1
         with:
-          version: v4.53.6
+          version: v4.54.1
       - name: Format YAML and JSON
         run: |
           git ls-files -z '*.yml' '*.yaml' '*.json' | while IFS= read -r -d '' file; do
