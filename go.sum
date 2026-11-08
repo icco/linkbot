@@ -40,8 +40,8 @@ github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWD
 github.com/stretchr/testify v1.12.1/go.mod h1:MDEgiDPPsNp5cuIrHPPCyornHKgEVbtFUmoNlxoYthg=
 github.com/unrolled/secure v1.17.0 h1:Io7ifFgo99Bnh0J7+Q+qcMzWM6kaDPCA5FroFZEdbWU=
 github.com/unrolled/secure v1.17.0/go.mod h1:BmF5hyM6tXczk3MpQkFf1hpKSRqCyhqcbiQtiAF7+40=
-go.icco.me/gutil v1.0.36 h1:xD15Km9aZD1uuAdmy7NKpZcp0Pkm6PRT/KQ4ucfTClU=
-go.icco.me/gutil v1.0.36/go.mod h1:pgBI5QoaCrldAW3NUs8sqIzzcw8C3x+SZa+JV3Wk3Uw=
+go.icco.me/gutil v1.0.37 h1:Igfj8GTRptdephQoGdRdl7aQX/S5VmfNvoyNyYtkZWc=
+go.icco.me/gutil v1.0.37/go.mod h1:kt5XNsHo+saLJXi3CO4KxTd0e2uSPkO49qcU16AZySY=
 go.icco.me/odesli v1.0.8 h1:+B2cgVY3Ixpzp2IaO05HpIZN2lI/BtFHwlyHCzulG6w=
 go.icco.me/odesli v1.0.8/go.mod h1:zJXs+3lrCfCGKz8nU7KKsggEtc1o9AalbnADQIKKcpI=
 go.opentelemetry.io/auto/sdk v1.2.1 h1:jXsnJ4Lmnqd11kwkBV2LgLoFMZKizbCi5fNZ/ipaZ64=
