@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.27.3-alpine AS builder
+FROM golang:1.27.4-alpine AS builder
 
 ENV GOPROXY="https://proxy.golang.org"
 ENV CGO_ENABLED=0
