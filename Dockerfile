@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.27.3-alpine AS builder
+FROM golang:1.27.4-alpine AS builder
 
 ENV GOPROXY="https://proxy.golang.org"
 ENV CGO_ENABLED=0
@@ -13,7 +13,7 @@ COPY . .
 RUN go build -trimpath -ldflags="-s -w" -o /linkbot .
 
 # Final stage
-FROM alpine:3.24.3
+FROM alpine:3.24.4
 
 LABEL org.opencontainers.image.source=https://github.com/icco/linkbot
 LABEL org.opencontainers.image.description="Better links in your life"
