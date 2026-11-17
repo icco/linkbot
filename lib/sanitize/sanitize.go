@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+
 	"go.icco.me/linkbot/lib/careen"
 	"go.icco.me/odesli"
 )
@@ -65,7 +67,10 @@ func New(o *odesli.Client, opts ...Option) *Sanitizer {
 	}
 	s := &Sanitizer{
 		odesli: o,
-		hc:     &http.Client{Timeout: defaultHTTPTimeout},
+		hc: &http.Client{
+			Timeout:   defaultHTTPTimeout,
+			Transport: otelhttp.NewTransport(http.DefaultTransport),
+		},
 	}
 	for _, opt := range opts {
 		opt(s)

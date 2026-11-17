@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.icco.me/gutil/logging"
+	"go.icco.me/gutil/tracing"
 	"go.icco.me/odesli"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
@@ -59,6 +60,18 @@ func run() error {
 	defer func() {
 		if err := log.Sync(); err != nil {
 			log.Debugw("logger sync", zap.Error(err))
+		}
+	}()
+
+	shutdownTracer, err := tracing.Init(context.Background(), "linkbot")
+	if err != nil {
+		return fmt.Errorf("tracing init: %w", err)
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := shutdownTracer(shutdownCtx); err != nil {
+			log.Warnw("tracing shutdown", zap.Error(err))
 		}
 	}()
 

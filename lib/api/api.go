@@ -67,7 +67,7 @@ func Router(opts Options) http.Handler {
 
 	return otelhttp.NewHandler(r, serverName,
 		otelhttp.WithFilter(func(req *http.Request) bool {
-			return req.URL.Path != "/metrics"
+			return req.URL.Path != "/metrics" && req.URL.Path != "/healthcheck"
 		}),
 	)
 }
